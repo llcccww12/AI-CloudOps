@@ -5,7 +5,6 @@ go 1.24.6
 require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107
 	github.com/casbin/casbin/v2 v2.93.0
-	github.com/fatih/color v1.16.0
 	github.com/gin-contrib/cors v1.7.2
 	github.com/gin-contrib/gzip v1.2.3
 	github.com/gin-gonic/gin v1.10.0
@@ -54,7 +53,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/go-redis/redis/v8 v8.11.2 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/robfig/cron/v3 v3.0.1
 )
 
@@ -101,6 +99,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20210407135951-1de76d718b3f // indirect
+	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect

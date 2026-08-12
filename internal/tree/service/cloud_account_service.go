@@ -40,7 +40,7 @@ import (
 type CloudAccountService interface {
 	GetCloudAccountList(ctx context.Context, req *model.GetCloudAccountListReq) (model.ListResp[*model.CloudAccount], error)
 	GetCloudAccountDetail(ctx context.Context, req *model.GetCloudAccountDetailReq) (*model.CloudAccount, error)
-	CreateCloudAccount(ctx context.Context, req *model.CreateCloudAccountReq, createUserID int, createUserName string) error
+	CreateCloudAccount(ctx context.Context, req *model.CreateCloudAccountReq, createUserID int, createUserName string) (*model.CloudAccount, error)
 	UpdateCloudAccount(ctx context.Context, req *model.UpdateCloudAccountReq) error
 	DeleteCloudAccount(ctx context.Context, req *model.DeleteCloudAccountReq) error
 	UpdateCloudAccountStatus(ctx context.Context, req *model.UpdateCloudAccountStatusReq) error
@@ -139,35 +139,37 @@ func (s *cloudAccountService) GetCloudAccountDetail(ctx context.Context, req *mo
 	return account, nil
 }
 
-func (s *cloudAccountService) CreateCloudAccount(ctx context.Context, req *model.CreateCloudAccountReq, createUserID int, createUserName string) error {
+func (s *cloudAccountService) CreateCloudAccount(ctx context.Context, req *model.CreateCloudAccountReq, createUserID int, createUserName string) (*model.CloudAccount, error) {
 	normalizedRegions, err := treeUtils.ValidateAndNormalizeRegions(req.Regions)
 	if err != nil {
-		return fmt.Errorf("区域验证失败: %w", err)
+		return nil, fmt.Errorf("区域验证失败: %w", err)
 	}
 
 	// 检查账户名称是否已存在（同一云厂商下）
 	exists, err := s.dao.CheckNameExists(ctx, req.Name, req.Provider, 0)
 	if err != nil {
 		s.logger.Error("检查云账户名称是否存在失败", zap.Error(err))
-		return fmt.Errorf("检查云账户名称失败: %w", err)
+		return nil, fmt.Errorf("检查云账户名称失败: %w", err)
 	}
 
 	if exists {
-		return fmt.Errorf("云账户名称 %s 在 %s 下已存在", req.Name, treeUtils.GetProviderName(req.Provider))
+		return nil, fmt.Errorf("云账户名称 %s 在 %s 下已存在", req.Name, treeUtils.GetProviderName(req.Provider))
 	}
 
 	// 加密 AccessKey 和 SecretKey
 	encryptedAccessKey, err := treeUtils.EncryptPassword(req.AccessKey)
 	if err != nil {
 		s.logger.Error("加密AccessKey失败", zap.Error(err))
-		return fmt.Errorf("加密AccessKey失败: %w", err)
+		return nil, fmt.Errorf("加密AccessKey失败: %w", err)
 	}
 
 	encryptedSecretKey, err := treeUtils.EncryptPassword(req.SecretKey)
 	if err != nil {
 		s.logger.Error("加密SecretKey失败", zap.Error(err))
-		return fmt.Errorf("加密SecretKey失败: %w", err)
+		return nil, fmt.Errorf("加密SecretKey失败: %w", err)
 	}
+
+	var createdAccount *model.CloudAccount
 
 	// 使用事务创建云账户和区域关联
 	if err := s.dao.CreateWithTransaction(ctx, func(tx interface{}) error {
@@ -220,12 +222,14 @@ func (s *cloudAccountService) CreateCloudAccount(ctx context.Context, req *model
 			zap.Int8("provider", int8(account.Provider)),
 			zap.Int("region_count", len(normalizedRegions)))
 
+		createdAccount = account
 		return nil
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	treeUtils.SanitizeCloudAccount(createdAccount)
+	return createdAccount, nil
 }
 
 // UpdateCloudAccount 更新云账户（支持更新区域）
@@ -577,7 +581,7 @@ func (s *cloudAccountService) ImportCloudAccount(ctx context.Context, req *model
 			continue
 		}
 
-		if err := s.CreateCloudAccount(ctx, &accountReq, createUserID, createUserName); err != nil {
+		if _, err := s.CreateCloudAccount(ctx, &accountReq, createUserID, createUserName); err != nil {
 			s.logger.Error("导入云账户失败",
 				zap.String("name", accountReq.Name),
 				zap.Error(err))

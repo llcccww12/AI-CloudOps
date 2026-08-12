@@ -90,7 +90,7 @@ func (h *CloudAccountHandler) CreateCloudAccount(ctx *gin.Context) {
 	user := ctx.MustGet("user").(jwt.UserClaims)
 
 	base.HandleRequest(ctx, &req, func() (interface{}, error) {
-		return nil, h.service.CreateCloudAccount(ctx.Request.Context(), &req, user.Uid, user.Username)
+		return h.service.CreateCloudAccount(ctx.Request.Context(), &req, user.Uid, user.Username)
 	})
 }
 

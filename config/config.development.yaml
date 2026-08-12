@@ -9,10 +9,10 @@ jwt:
   issuer: "K5mBPBYNQeNWEBvCTE5msog3KSGTdhmx"
   expiration: 3600
 redis:
-  addr: "localhost:6379"
+  addr: "localhost:36379"
   password: "v6SxhWHyZC7S"
 mysql:
-  addr: "root:root@tcp(localhost:3306)/cloudops?charset=utf8mb4&parseTime=True&loc=Local"
+  addr: "root:root@tcp(localhost:3308)/cloudops?charset=utf8mb4&parseTime=True&loc=Local"
 tree:
   check_status_cron: "@every 300s"
   password_encryption_key: "ebe3vxIP7sblVvUHXb7ZaiMPuz4oXo0l"
@@ -35,7 +35,8 @@ notification:
     smtp_port: 587
     username: "xxx@qq.com"
     password: "xxx"
-    from_name: "AI-CloudOps"
+    from_name: "CacOps"
+    frontend_url: "http://localhost:5666"
     max_retries: 3
     retry_interval: "5m"
     timeout: "30s"
