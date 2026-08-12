@@ -26,6 +26,7 @@
 package model
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,34 @@ import (
 
 	"gorm.io/plugin/soft_delete"
 )
+
+// JSONString 兼容前端 InputNumber 提交的数字或字符串
+type JSONString string
+
+func (s JSONString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(s))
+}
+
+func (s *JSONString) UnmarshalJSON(data []byte) error {
+	if s == nil {
+		return fmt.Errorf("JSONString: nil receiver")
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		*s = ""
+		return nil
+	}
+	if data[0] == '"' {
+		var str string
+		if err := json.Unmarshal(data, &str); err != nil {
+			return err
+		}
+		*s = JSONString(str)
+		return nil
+	}
+	*s = JSONString(string(data))
+	return nil
+}
 
 // Model 通用基础模型
 type Model struct {
@@ -142,6 +171,23 @@ func (s StringList) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON 实现 json.Unmarshaler 接口
 func (s *StringList) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		*s = StringList{}
+		return nil
+	}
+	if data[0] == '"' {
+		var str string
+		if err := json.Unmarshal(data, &str); err != nil {
+			return fmt.Errorf("failed to unmarshal StringList: %w", err)
+		}
+		if str == "" {
+			*s = StringList{}
+			return nil
+		}
+		*s = StringList{str}
+		return nil
+	}
 	var arr []string
 	if err := json.Unmarshal(data, &arr); err != nil {
 		return fmt.Errorf("failed to unmarshal StringList: %w", err)

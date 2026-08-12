@@ -53,6 +53,8 @@ func InitTables(db *gorm.DB) error {
 		&model.TreeCloudResource{},
 		&model.CloudAccount{},
 		&model.K8sCluster{},
+		&model.K8sYamlTemplate{},
+		&model.K8sYamlTask{},
 		&model.CloudResourceSyncHistory{},
 		&model.CloudResourceChangeLog{},
 

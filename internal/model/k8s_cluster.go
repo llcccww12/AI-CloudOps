@@ -69,10 +69,10 @@ func (k8sCluster *K8sCluster) TableName() string {
 
 type CreateClusterReq struct {
 	Name                 string       `json:"name" binding:"required,min=1,max=200"` // 集群名称
-	CpuRequest           string       `json:"cpu_request,omitempty"`                 // CPU 请求量
-	CpuLimit             string       `json:"cpu_limit,omitempty"`                   // CPU 限制量
-	MemoryRequest        string       `json:"memory_request,omitempty"`              // 内存请求量
-	MemoryLimit          string       `json:"memory_limit,omitempty"`                // 内存限制量
+	CpuRequest           JSONString   `json:"cpu_request,omitempty"`                 // CPU 请求量
+	CpuLimit             JSONString   `json:"cpu_limit,omitempty"`                   // CPU 限制量
+	MemoryRequest        JSONString   `json:"memory_request,omitempty"`              // 内存请求量
+	MemoryLimit          JSONString   `json:"memory_limit,omitempty"`                // 内存限制量
 	RestrictNamespace    StringList   `json:"restrict_namespace"`                    // 资源限制命名空间
 	Env                  Env          `json:"env,omitempty"`                         // 集群环境
 	Version              string       `json:"version,omitempty"`                     // 集群版本
@@ -87,10 +87,10 @@ type CreateClusterReq struct {
 type UpdateClusterReq struct {
 	ID                   int          `json:"id" form:"id" uri:"id" binding:"required" comment:"集群ID"`
 	Name                 string       `json:"name" binding:"required,min=1,max=200"` // 集群名称
-	CpuRequest           string       `json:"cpu_request,omitempty"`                 // CPU 请求量
-	CpuLimit             string       `json:"cpu_limit,omitempty"`                   // CPU 限制量
-	MemoryRequest        string       `json:"memory_request,omitempty"`              // 内存请求量
-	MemoryLimit          string       `json:"memory_limit,omitempty"`                // 内存限制量
+	CpuRequest           JSONString   `json:"cpu_request,omitempty"`                 // CPU 请求量
+	CpuLimit             JSONString   `json:"cpu_limit,omitempty"`                   // CPU 限制量
+	MemoryRequest        JSONString   `json:"memory_request,omitempty"`              // 内存请求量
+	MemoryLimit          JSONString   `json:"memory_limit,omitempty"`                // 内存限制量
 	RestrictNamespace    StringList   `json:"restrict_namespace"`                    // 资源限制命名空间
 	Env                  Env          `json:"env,omitempty"`                         // 集群环境
 	Version              string       `json:"version,omitempty"`                     // 集群版本

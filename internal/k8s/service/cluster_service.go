@@ -127,10 +127,10 @@ func (s *clusterService) CreateCluster(ctx context.Context, req *model.CreateClu
 
 	cluster := &model.K8sCluster{
 		Name:                 req.Name,
-		CpuRequest:           req.CpuRequest,
-		CpuLimit:             req.CpuLimit,
-		MemoryRequest:        req.MemoryRequest,
-		MemoryLimit:          req.MemoryLimit,
+		CpuRequest:           string(req.CpuRequest),
+		CpuLimit:             string(req.CpuLimit),
+		MemoryRequest:        string(req.MemoryRequest),
+		MemoryLimit:          string(req.MemoryLimit),
 		RestrictNamespace:    req.RestrictNamespace,
 		Status:               model.StatusRunning,
 		Env:                  req.Env,
@@ -204,10 +204,10 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req *model.UpdateClu
 		Status:               model.StatusRunning,
 		Env:                  req.Env,
 		Version:              req.Version,
-		CpuRequest:           req.CpuRequest,
-		CpuLimit:             req.CpuLimit,
-		MemoryRequest:        req.MemoryRequest,
-		MemoryLimit:          req.MemoryLimit,
+		CpuRequest:           string(req.CpuRequest),
+		CpuLimit:             string(req.CpuLimit),
+		MemoryRequest:        string(req.MemoryRequest),
+		MemoryLimit:          string(req.MemoryLimit),
 	}
 
 	if err := utils.ValidateResourceQuantities(cluster); err != nil {
