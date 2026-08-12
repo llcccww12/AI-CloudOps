@@ -731,8 +731,8 @@ func (e *EmailChannel) buildEmailContent(request *SendRequest) string {
                 
                 <div class="action-section">
                     <div class="action-title">请登录系统查看详细信息或进行相关操作</div>
-                    <a href="#" class="btn btn-primary">立即查看</a>
-                    <a href="#" class="btn btn-secondary">管理平台</a>
+                    <a href="%s" class="btn btn-primary" target="_blank" rel="noopener noreferrer">立即查看</a>
+                    <a href="%s" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">管理平台</a>
                 </div>
             </div>
             
@@ -788,6 +788,18 @@ func (e *EmailChannel) buildEmailContent(request *SendRequest) string {
 	}
 	content := escapeHTML(renderedContent)
 
+	frontendURL := "http://localhost:5666"
+	if e.config != nil {
+		if u := e.config.GetFrontendURL(); u != "" {
+			frontendURL = u
+		}
+	}
+	platformURL := frontendURL + "/instance"
+	detailURL := platformURL
+	if request.InstanceID != nil && *request.InstanceID > 0 && *request.InstanceID != 999999 {
+		detailURL = fmt.Sprintf("%s/instance?id=%d", frontendURL, *request.InstanceID)
+	}
+
 	return fmt.Sprintf(template,
 		eventTypeDisplay,                      // 通知类型徽章
 		recipientName,                         // 收件人名称
@@ -796,7 +808,10 @@ func (e *EmailChannel) buildEmailContent(request *SendRequest) string {
 		workorderNumber,                       // 工单编号
 		request.RecipientAddr,                 // 邮箱地址
 		time.Now().Format("2006-01-02 15:04"), // 发送时间
-		content)                               // 消息内容
+		content,                               // 消息内容
+		detailURL,                             // 立即查看
+		platformURL,                           // 管理平台
+	)
 }
 
 // escapeHTML 转义HTML特殊字符防止XSS攻击

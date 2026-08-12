@@ -207,6 +207,7 @@ var DaoSet = wire.NewSet(
 	workorderDao.NewInstanceFlowDAO,
 	workorderDao.NewInstanceTimeLineDAO,
 	workorderDao.NewNotificationDAO,
+	workorderDao.NewNotificationReminderDAO,
 	treeDao.NewTreeNodeDAO,
 	treeDao.NewTreeLocalDAO,
 	treeDao.NewTreeCloudDAO,

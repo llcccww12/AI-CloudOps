@@ -52,6 +52,7 @@ type InstanceService interface {
 	UpdateInstance(ctx context.Context, req *model.UpdateWorkorderInstanceReq) error
 	DeleteInstance(ctx context.Context, id int) error
 	GetInstance(ctx context.Context, id int) (*model.WorkorderInstance, error)
+	MarkNotificationRead(ctx context.Context, instanceID, userID int)
 	ListInstance(ctx context.Context, req *model.ListWorkorderInstanceReq) (*model.ListResp[*model.WorkorderInstance], error)
 	SubmitInstance(ctx context.Context, id int, operatorID int, operatorName string) error
 	AssignInstance(ctx context.Context, id int, assigneeID int, operatorID int, operatorName string) error
@@ -192,16 +193,7 @@ func (s *instanceService) CreateInstance(ctx context.Context, req *model.CreateW
 
 	s.createTimelineRecord(ctx, instance.ID, model.TimelineActionCreate, req.OperatorID, req.OperatorName, "工单创建")
 
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, instance.ID, model.EventTypeInstanceCreated); err != nil {
-				s.logger.Error("发送工单创建通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", instance.ID))
-			}
-		}()
-	}
+	s.sendNotificationAsync(instance.ID, model.EventTypeInstanceCreated)
 
 	return nil
 }
@@ -294,16 +286,7 @@ func (s *instanceService) CreateInstanceFromTemplate(ctx context.Context, templa
 
 	s.createTimelineRecord(ctx, instance.ID, model.TimelineActionCreate, req.OperatorID, req.OperatorName, fmt.Sprintf("从模板 %s 创建工单", template.Name))
 
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, instance.ID, model.EventTypeInstanceCreated, fmt.Sprintf("从模板 %s 创建", template.Name)); err != nil {
-				s.logger.Error("发送工单创建通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", instance.ID))
-			}
-		}()
-	}
+	s.sendNotificationAsync(instance.ID, model.EventTypeInstanceCreated, fmt.Sprintf("从模板 %s 创建", template.Name))
 
 	return nil
 }
@@ -348,16 +331,7 @@ func (s *instanceService) UpdateInstance(ctx context.Context, req *model.UpdateW
 		return err
 	}
 
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, req.ID, model.EventTypeInstanceUpdated, "工单信息已更新"); err != nil {
-				s.logger.Error("发送工单更新通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", req.ID))
-			}
-		}()
-	}
+	s.sendNotificationAsync(req.ID, model.EventTypeInstanceUpdated, "工单信息已更新")
 
 	return nil
 }
@@ -385,16 +359,7 @@ func (s *instanceService) DeleteInstance(ctx context.Context, id int) error {
 		return err
 	}
 
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, model.EventTypeInstanceDeleted, fmt.Sprintf("工单 %s 已删除", instance.Title)); err != nil {
-				s.logger.Error("发送工单删除通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id))
-			}
-		}()
-	}
+	s.sendNotificationAsync(id, model.EventTypeInstanceDeleted, fmt.Sprintf("工单 %s 已删除", instance.Title))
 
 	return nil
 }
@@ -407,6 +372,30 @@ func (s *instanceService) GetInstance(ctx context.Context, id int) (*model.Worko
 	}
 
 	return instance, nil
+}
+
+// MarkNotificationRead 打开工单详情视为已读，停止对该用户的未读催发
+func (s *instanceService) MarkNotificationRead(ctx context.Context, instanceID, userID int) {
+	if s.notificationService == nil || instanceID <= 0 || userID <= 0 {
+		return
+	}
+	if err := s.notificationService.AcknowledgeByUser(ctx, instanceID, userID); err != nil {
+		s.logger.Warn("标记通知已读失败",
+			zap.Error(err),
+			zap.Int("instance_id", instanceID),
+			zap.Int("user_id", userID))
+	}
+}
+
+func (s *instanceService) stopNotificationReminders(ctx context.Context, instanceID int) {
+	if s.notificationService == nil || instanceID <= 0 {
+		return
+	}
+	if err := s.notificationService.StopRemindersByInstance(ctx, instanceID); err != nil {
+		s.logger.Warn("停止工单催发失败",
+			zap.Error(err),
+			zap.Int("instance_id", instanceID))
+	}
 }
 
 func (s *instanceService) ListInstance(ctx context.Context, req *model.ListWorkorderInstanceReq) (*model.ListResp[*model.WorkorderInstance], error) {
@@ -488,16 +477,7 @@ func (s *instanceService) SubmitInstance(ctx context.Context, id int, operatorID
 	s.createTimelineRecord(ctx, id, model.TimelineActionSubmit, operatorID, operatorName, "工单提交")
 
 	// 发送工单提交通知
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, model.EventTypeInstanceSubmitted); err != nil {
-				s.logger.Error("发送工单提交通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id))
-			}
-		}()
-	}
+	s.sendNotificationAsync(id, model.EventTypeInstanceSubmitted)
 
 	return nil
 }
@@ -549,16 +529,7 @@ func (s *instanceService) AssignInstance(ctx context.Context, id int, assigneeID
 	s.createTimelineRecord(ctx, id, model.TimelineActionAssign, operatorID, operatorName, fmt.Sprintf("工单指派给用户ID: %d", assigneeID))
 
 	// 发送工单指派通知
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, model.EventTypeInstanceAssigned, fmt.Sprintf("指派给用户ID: %d", assigneeID)); err != nil {
-				s.logger.Error("发送工单指派通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id))
-			}
-		}()
-	}
+	s.sendNotificationAsync(id, model.EventTypeInstanceAssigned, fmt.Sprintf("指派给用户ID: %d", assigneeID))
 
 	return nil
 }
@@ -687,22 +658,12 @@ func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorI
 	}
 
 	// 发送工单审批通过通知
-	if s.notificationService != nil {
-		eventType := model.EventTypeInstanceApproved
-		if toStatus == model.InstanceStatusCompleted {
-			eventType = model.EventTypeInstanceCompleted
-		}
-
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, eventType, comment); err != nil {
-				s.logger.Error("发送工单审批通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id),
-					zap.String("event_type", eventType))
-			}
-		}()
+	eventType := model.EventTypeInstanceApproved
+	if toStatus == model.InstanceStatusCompleted {
+		eventType = model.EventTypeInstanceCompleted
+		s.stopNotificationReminders(ctx, id)
 	}
+	s.sendNotificationAsync(id, eventType, comment)
 
 	return nil
 }
@@ -766,17 +727,10 @@ func (s *instanceService) RejectInstance(ctx context.Context, id int, operatorID
 		s.logger.Error("创建拒绝评论失败", zap.Error(err), zap.Int("instanceID", id))
 	}
 
+	s.stopNotificationReminders(ctx, id)
+
 	// 发送工单拒绝通知
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, model.EventTypeInstanceRejected, comment); err != nil {
-				s.logger.Error("发送工单拒绝通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id))
-			}
-		}()
-	}
+	s.sendNotificationAsync(id, model.EventTypeInstanceRejected, comment)
 
 	return nil
 }
@@ -1340,17 +1294,10 @@ func (s *instanceService) CancelInstance(ctx context.Context, id int, operatorID
 		}
 	}
 
+	s.stopNotificationReminders(ctx, id)
+
 	// 发送工单取消通知
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, model.EventTypeInstanceCancelled, comment); err != nil {
-				s.logger.Error("发送工单取消通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id))
-			}
-		}()
-	}
+	s.sendNotificationAsync(id, model.EventTypeInstanceCancelled, comment)
 
 	return nil
 }
@@ -1417,17 +1364,10 @@ func (s *instanceService) CompleteInstance(ctx context.Context, id int, operator
 		}
 	}
 
+	s.stopNotificationReminders(ctx, id)
+
 	// 发送工单完成通知
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, model.EventTypeInstanceCompleted, comment); err != nil {
-				s.logger.Error("发送工单完成通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id))
-			}
-		}()
-	}
+	s.sendNotificationAsync(id, model.EventTypeInstanceCompleted, comment)
 
 	return nil
 }
@@ -1496,16 +1436,7 @@ func (s *instanceService) ReturnInstance(ctx context.Context, id int, operatorID
 	}
 
 	// 发送工单退回通知
-	if s.notificationService != nil {
-		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, id, model.EventTypeInstanceReturned, comment); err != nil {
-				s.logger.Error("发送工单退回通知失败",
-					zap.Error(err),
-					zap.Int("instance_id", id))
-			}
-		}()
-	}
+	s.sendNotificationAsync(id, model.EventTypeInstanceReturned, comment)
 
 	return nil
 }
@@ -1530,6 +1461,23 @@ func (s *instanceService) canUserOperateStep(step *model.ProcessStep, operatorID
 	}
 
 	return false
+}
+
+
+func (s *instanceService) sendNotificationAsync(instanceID int, eventType string, customContent ...string) {
+	if s.notificationService == nil || instanceID <= 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := s.notificationService.SendWorkorderNotification(ctx, instanceID, eventType, customContent...); err != nil {
+			s.logger.Error("发送工单通知失败",
+				zap.Error(err),
+				zap.Int("instance_id", instanceID),
+				zap.String("event_type", eventType))
+		}
+	}()
 }
 
 func (s *instanceService) getDefaultPageSize() int {

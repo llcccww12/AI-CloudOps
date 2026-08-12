@@ -129,8 +129,14 @@ func (h *InstanceHandler) DetailInstance(ctx *gin.Context) {
 		return
 	}
 
+	user := ctx.MustGet("user").(jwt.UserClaims)
 	base.HandleRequest(ctx, nil, func() (any, error) {
-		return h.service.GetInstance(ctx.Request.Context(), id)
+		instance, err := h.service.GetInstance(ctx.Request.Context(), id)
+		if err != nil {
+			return nil, err
+		}
+		h.service.MarkNotificationRead(ctx.Request.Context(), id, user.Uid)
+		return instance, nil
 	})
 }
 

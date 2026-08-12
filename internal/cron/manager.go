@@ -40,6 +40,7 @@ import (
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/prometheus/cache"
 	"github.com/GoSimplicity/AI-CloudOps/internal/prometheus/dao/alert"
+	workorderService "github.com/GoSimplicity/AI-CloudOps/internal/workorder/service"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -56,6 +57,7 @@ const (
 	OnDutyCheckInterval                    = 10 * time.Second
 	DefaultPrometheusConfigRefreshInterval = 15 * time.Second
 	K8sCheckInterval                       = 60 * time.Second
+	WorkorderReminderInterval              = 1 * time.Minute
 	MaxRetries                             = 3
 	RetryDelay                             = 5 * time.Second
 )
@@ -82,6 +84,8 @@ type unifiedCronManager struct {
 
 	builtinTaskMgr *BuiltinTaskManager
 
+	notificationService workorderService.WorkorderNotificationService
+
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
@@ -96,16 +100,18 @@ func NewUnifiedCronManager(
 	promConfigCache cache.MonitorCache,
 	cronScheduler *scheduler.CronScheduler,
 	builtinTaskMgr *BuiltinTaskManager,
+	notificationService workorderService.WorkorderNotificationService,
 ) CronManager {
 	return &unifiedCronManager{
-		logger:          logger,
-		onDutyDao:       onDutyDao,
-		k8sDao:          k8sDao,
-		k8sClient:       k8sClient,
-		clusterMgr:      clusterMgr,
-		promConfigCache: promConfigCache,
-		cronScheduler:   cronScheduler,
-		builtinTaskMgr:  builtinTaskMgr,
+		logger:              logger,
+		onDutyDao:           onDutyDao,
+		k8sDao:              k8sDao,
+		k8sClient:           k8sClient,
+		clusterMgr:          clusterMgr,
+		promConfigCache:     promConfigCache,
+		cronScheduler:       cronScheduler,
+		builtinTaskMgr:      builtinTaskMgr,
+		notificationService: notificationService,
 	}
 }
 
@@ -181,6 +187,15 @@ func (cm *unifiedCronManager) StartSystemTasks(ctx context.Context) error {
 				defer cm.wg.Done()
 				if err := cm.startPrometheusConfigRefreshManager(ctx); err != nil {
 					cm.logger.Error("Prometheus配置刷新任务异常退出", zap.String("taskName", taskName), zap.Error(err))
+				}
+			}(task.Name)
+
+		case "workorder_notification_reminder":
+			cm.wg.Add(1)
+			go func(taskName string) {
+				defer cm.wg.Done()
+				if err := cm.startWorkorderNotificationReminderManager(ctx); err != nil {
+					cm.logger.Error("工单通知未读催发任务异常退出", zap.String("taskName", taskName), zap.Error(err))
 				}
 			}(task.Name)
 
@@ -870,4 +885,38 @@ func (cm *unifiedCronManager) getPrometheusRefreshInterval() time.Duration {
 		zap.String("spec", spec),
 		zap.Duration("default", DefaultPrometheusConfigRefreshInterval))
 	return DefaultPrometheusConfigRefreshInterval
+}
+
+func (cm *unifiedCronManager) startWorkorderNotificationReminderManager(ctx context.Context) error {
+	cm.logger.Info("启动工单通知未读催发任务")
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				cm.logger.Error("工单通知未读催发任务发生 panic，正在重启", zap.Any("panic", r))
+				time.Sleep(RetryDelay)
+				go cm.startWorkorderNotificationReminderManager(ctx)
+			}
+		}()
+
+		wait.UntilWithContext(ctx, func(ctx context.Context) {
+			defer func() {
+				if r := recover(); r != nil {
+					cm.logger.Error("工单通知未读催发任务执行时发生 panic", zap.Any("panic", r))
+				}
+			}()
+
+			if cm.notificationService == nil {
+				return
+			}
+
+			if err := cm.notificationService.ProcessDueReminders(ctx); err != nil {
+				cm.logger.Error("处理工单未读催发失败", zap.Error(err))
+			}
+		}, WorkorderReminderInterval)
+	}()
+
+	<-ctx.Done()
+	cm.logger.Info("工单通知未读催发任务已停止")
+	return nil
 }

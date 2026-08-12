@@ -143,6 +143,7 @@ type EmailConfig struct {
 	Username      string `mapstructure:"username" env:"NOTIFICATION_EMAIL_USERNAME" default:""`
 	Password      string `mapstructure:"password" env:"NOTIFICATION_EMAIL_PASSWORD" default:""`
 	FromName      string `mapstructure:"from_name" env:"NOTIFICATION_EMAIL_FROM_NAME" default:"AI-CloudOps"`
+	FrontendURL   string `mapstructure:"frontend_url" env:"NOTIFICATION_EMAIL_FRONTEND_URL" default:"http://localhost:5666"`
 	MaxRetries    int    `mapstructure:"max_retries" env:"NOTIFICATION_EMAIL_MAX_RETRIES" default:"3"`
 	RetryInterval string `mapstructure:"retry_interval" env:"NOTIFICATION_EMAIL_RETRY_INTERVAL" default:"5m"`
 	Timeout       string `mapstructure:"timeout" env:"NOTIFICATION_EMAIL_TIMEOUT" default:"30s"`
@@ -254,6 +255,13 @@ func (c *EmailConfig) GetUseTLS() bool {
 		return false
 	}
 	return c.UseTLS
+}
+
+func (c *EmailConfig) GetFrontendURL() string {
+	if c == nil || strings.TrimSpace(c.FrontendURL) == "" {
+		return "http://localhost:5666"
+	}
+	return strings.TrimRight(strings.TrimSpace(c.FrontendURL), "/")
 }
 
 type FeishuConfig struct {

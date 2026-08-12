@@ -29,6 +29,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/workorder/dao"
@@ -107,12 +108,15 @@ func (s *instanceCommentService) CreateInstanceComment(ctx context.Context, req 
 
 	// 发送评论通知（仅对非系统评论发送通知）
 	if s.notificationService != nil && comment.IsSystem != 1 {
+		instanceID := comment.InstanceID
+		content := comment.Content
 		go func() {
-			// 异步发送通知，避免阻塞主流程
-			if err := s.notificationService.SendWorkorderNotification(ctx, comment.InstanceID, model.EventTypeInstanceCommented, comment.Content); err != nil {
+			notifyCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if err := s.notificationService.SendWorkorderNotification(notifyCtx, instanceID, model.EventTypeInstanceCommented, content); err != nil {
 				s.logger.Error("发送工单评论通知失败",
 					zap.Error(err),
-					zap.Int("instance_id", comment.InstanceID))
+					zap.Int("instance_id", instanceID))
 			}
 		}()
 	}

@@ -55,6 +55,7 @@ type EmailConfig interface {
 	GetPassword() string
 	GetFromName() string
 	GetUseTLS() bool
+	GetFrontendURL() string
 }
 
 type FeishuConfig interface {

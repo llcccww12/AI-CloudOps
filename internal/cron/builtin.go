@@ -67,6 +67,13 @@ func GetBuiltinTasks() []BuiltinTaskDefinition {
 			TaskType:    "prometheus_config_refresh",
 			Enabled:     true,
 		},
+		{
+			Name:        "工单通知未读催发",
+			Description: "扫描到期的工单未读催发并重新发送通知",
+			Schedule:    "* * * * *", // 每分钟执行一次
+			TaskType:    "workorder_notification_reminder",
+			Enabled:     true,
+		},
 	}
 }
 

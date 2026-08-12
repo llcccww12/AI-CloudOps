@@ -59,10 +59,22 @@ func (h *InstanceCommentHandler) CreateInstanceComment(ctx *gin.Context) {
 	var req model.CreateWorkorderInstanceCommentReq
 	user := ctx.MustGet("user").(jwt.UserClaims)
 
+	// 先写入操作人：JSON 缺失字段会保留，满足 binding required
 	req.OperatorID = user.Uid
 	req.OperatorName = user.Username
 
 	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.OperatorID = user.Uid
+		req.OperatorName = user.Username
+		if req.Type == "" {
+			req.Type = model.CommentTypeNormal
+		}
+		if req.IsSystem == 0 {
+			req.IsSystem = 2
+		}
+		if req.Status == 0 {
+			req.Status = model.CommentStatusNormal
+		}
 		return nil, h.commentService.CreateInstanceComment(ctx.Request.Context(), &req)
 	})
 }

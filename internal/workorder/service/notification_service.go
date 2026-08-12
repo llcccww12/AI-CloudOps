@@ -53,20 +53,32 @@ type WorkorderNotificationService interface {
 	SendWorkorderNotification(ctx context.Context, instanceID int, eventType string, customContent ...string) error
 	SendNotificationByChannels(ctx context.Context, channels []string, recipient, subject, content string) error
 	GetAvailableChannels() *model.ListResp[*model.WorkorderNotificationChannel]
+	ProcessDueReminders(ctx context.Context) error
+	AcknowledgeByUser(ctx context.Context, instanceID, userID int) error
+	StopRemindersByInstance(ctx context.Context, instanceID int) error
 }
 
 type workorderNotificationService struct {
 	dao             workorderDao.WorkorderNotificationDAO
+	reminderDAO     workorderDao.WorkorderNotificationReminderDAO
 	logger          *zap.Logger
 	notificationMgr *notification.Manager
 	instanceDAO     workorderDao.WorkorderInstanceDAO
 	userDAO         userDao.UserDAO
 }
 
-func NewWorkorderNotificationService(dao workorderDao.WorkorderNotificationDAO, notificationMgr *notification.Manager, logger *zap.Logger, instanceDAO workorderDao.WorkorderInstanceDAO, userDAO userDao.UserDAO) WorkorderNotificationService {
+func NewWorkorderNotificationService(
+	dao workorderDao.WorkorderNotificationDAO,
+	reminderDAO workorderDao.WorkorderNotificationReminderDAO,
+	notificationMgr *notification.Manager,
+	logger *zap.Logger,
+	instanceDAO workorderDao.WorkorderInstanceDAO,
+	userDAO userDao.UserDAO,
+) WorkorderNotificationService {
 	return &workorderNotificationService{
 		logger:          logger,
 		dao:             dao,
+		reminderDAO:     reminderDAO,
 		notificationMgr: notificationMgr,
 		instanceDAO:     instanceDAO,
 		userDAO:         userDAO,
@@ -144,99 +156,168 @@ func (s *workorderNotificationService) TestSendNotification(ctx context.Context,
 	}
 
 	for _, channel := range notificationConfig.Channels {
-		var recipientAddr string
-		if req.Recipient != "" {
-			recipientAddr = req.Recipient
-		} else {
-			switch channel {
-			case model.NotificationChannelEmail:
-				recipientAddr = "xxx@163.com"
-			case model.NotificationChannelFeishu:
-				recipientAddr = "xxx"
-			case model.NotificationChannelSMS:
-				recipientAddr = "13800138000"
-			case model.NotificationChannelWebhook:
-				recipientAddr = "https://webhook.site/test"
-			default:
-				recipientAddr = "test_recipient"
+		recipientAddrs := s.resolveTestRecipients(ctx, notificationConfig, channel)
+		if len(recipientAddrs) == 0 {
+			if req.Recipient != "" {
+				recipientAddrs = []testRecipient{{ID: "manual", Name: "手动指定", Addr: req.Recipient}}
+			} else {
+				return fmt.Errorf("没有可发送的接收人：请在通知配置中选择有邮箱的自定义用户，或给创建人账号补全邮箱")
 			}
 		}
 
-		// 创建模拟的实例ID用于测试
-		testInstanceID := 999999
+		for _, recipient := range recipientAddrs {
+			// 创建模拟的实例ID用于测试
+			testInstanceID := 999999
 
-		sendRequest := &notification.SendRequest{
-			Subject:       notificationConfig.SubjectTemplate,
-			Content:       notificationConfig.MessageTemplate,
-			Priority:      notificationConfig.Priority,
-			RecipientType: channel,
-			RecipientID:   "test_user",
-			RecipientAddr: recipientAddr,
-			RecipientName: "测试用户",
-			EventType:     "test",
-			InstanceID:    &testInstanceID,
-			Templates:     make(map[string]string),
-			Metadata: map[string]interface{}{
-				"notification_id": notificationConfig.ID,
-				"sender_id":       senderID,
-			},
-		}
+			sendRequest := &notification.SendRequest{
+				Subject:       notificationConfig.SubjectTemplate,
+				Content:       notificationConfig.MessageTemplate,
+				Priority:      notificationConfig.Priority,
+				RecipientType: channel,
+				RecipientID:   recipient.ID,
+				RecipientAddr: recipient.Addr,
+				RecipientName: recipient.Name,
+				EventType:     "test",
+				InstanceID:    &testInstanceID,
+				Templates:     make(map[string]string),
+				Metadata: map[string]interface{}{
+					"notification_id": notificationConfig.ID,
+					"sender_id":       senderID,
+				},
+			}
 
-		sendRequest.Templates["workorder_id"] = fmt.Sprintf("%d", testInstanceID)
-		sendRequest.Templates["serial_number"] = fmt.Sprintf("WO-%d", testInstanceID)
-		sendRequest.Templates["title"] = "系统测试工单 - 通知功能验证"
-		sendRequest.Templates["description"] = "系统测试工单，验证工单通知功能是否正常工作。"
-		sendRequest.Templates["operator_name"] = "系统管理员"
-		sendRequest.Templates["assignee_name"] = "运维工程师"
-		sendRequest.Templates["priority_level"] = fmt.Sprintf("%d", int(notificationConfig.Priority))
-		sendRequest.Templates["priority_text"] = notification.FormatPriority(notificationConfig.Priority)
-		sendRequest.Templates["status"] = "测试进行中"
-		sendRequest.Templates["created_time"] = time.Now().Format("2006-01-02 15:04:05")
-		sendRequest.Templates["updated_time"] = time.Now().Format("2006-01-02 15:04:05")
-		sendRequest.Templates["event_type"] = notification.GetEventTypeText("test")
-		sendRequest.Templates["notification_time"] = time.Now().Format("2006-01-02 15:04:05")
-		sendRequest.Templates["company_name"] = "AI-CloudOps"
-		sendRequest.Templates["platform_name"] = "运维管理平台"
-		sendRequest.Templates["department"] = "技术运维部"
-		sendRequest.Templates["test_content"] = "本次测试验证了系统通知功能的完整性，包括邮件发送、飞书消息推送等多个渠道的有效性。"
-		response, err := s.notificationMgr.SendNotification(ctx, sendRequest)
+			sendRequest.Templates["workorder_id"] = fmt.Sprintf("%d", testInstanceID)
+			sendRequest.Templates["serial_number"] = fmt.Sprintf("WO-%d", testInstanceID)
+			sendRequest.Templates["title"] = "系统测试工单 - 通知功能验证"
+			sendRequest.Templates["description"] = "系统测试工单，验证工单通知功能是否正常工作。"
+			sendRequest.Templates["operator_name"] = "系统管理员"
+			sendRequest.Templates["assignee_name"] = "运维工程师"
+			sendRequest.Templates["priority_level"] = fmt.Sprintf("%d", int(notificationConfig.Priority))
+			sendRequest.Templates["priority_text"] = notification.FormatPriority(notificationConfig.Priority)
+			sendRequest.Templates["status"] = "测试进行中"
+			sendRequest.Templates["created_time"] = time.Now().Format("2006-01-02 15:04:05")
+			sendRequest.Templates["updated_time"] = time.Now().Format("2006-01-02 15:04:05")
+			sendRequest.Templates["event_type"] = notification.GetEventTypeText("test")
+			sendRequest.Templates["notification_time"] = time.Now().Format("2006-01-02 15:04:05")
+			sendRequest.Templates["company_name"] = "AI-CloudOps"
+			sendRequest.Templates["platform_name"] = "运维管理平台"
+			sendRequest.Templates["department"] = "技术运维部"
+			sendRequest.Templates["test_content"] = "本次测试验证了系统通知功能的完整性，包括邮件发送、飞书消息推送等多个渠道的有效性。"
+			response, err := s.notificationMgr.SendNotification(ctx, sendRequest)
 
-		log := &model.WorkorderNotificationLog{
-			NotificationID: notificationConfig.ID,
-			EventType:      "test",
-			Channel:        channel,
-			RecipientType:  "test",
-			RecipientID:    "test_user",
-			RecipientName:  "测试用户",
-			RecipientAddr:  recipientAddr,
-			Subject:        notificationConfig.SubjectTemplate,
-			Content:        notificationConfig.MessageTemplate,
-			Status:         2,
-			SendAt:         time.Now(),
-			SenderID:       senderID,
-		}
+			log := &model.WorkorderNotificationLog{
+				NotificationID: notificationConfig.ID,
+				EventType:      "test",
+				Channel:        channel,
+				RecipientType:  "test",
+				RecipientID:    recipient.ID,
+				RecipientName:  recipient.Name,
+				RecipientAddr:  recipient.Addr,
+				Subject:        notificationConfig.SubjectTemplate,
+				Content:        notificationConfig.MessageTemplate,
+				Status:         2,
+				SendAt:         time.Now(),
+				SenderID:       senderID,
+			}
 
-		if err != nil {
-			log.Status = 4
-			log.ErrorMessage = err.Error()
-		} else if response != nil {
-			log.Status = 3
-			if response.ExternalID != "" {
-				log.ResponseData = map[string]interface{}{
-					"external_id": response.ExternalID,
+			if err != nil {
+				log.Status = 4
+				log.ErrorMessage = err.Error()
+			} else if response != nil {
+				log.Status = 3
+				if response.ExternalID != "" {
+					log.ResponseData = map[string]interface{}{
+						"external_id": response.ExternalID,
+					}
+				}
+				if response.Cost != nil {
+					log.Cost = response.Cost
 				}
 			}
-			if response.Cost != nil {
-				log.Cost = response.Cost
-			}
-		}
 
-		if err := s.dao.AddSendLog(ctx, log); err != nil {
-			s.logger.Error("记录发送日志失败", zap.Error(err))
+			if err := s.dao.AddSendLog(ctx, log); err != nil {
+				s.logger.Error("记录发送日志失败", zap.Error(err))
+			}
 		}
 	}
 
 	return s.dao.IncrementSentCount(ctx, notificationConfig.ID)
+}
+
+type testRecipient struct {
+	ID   string
+	Name string
+	Addr string
+}
+
+func (s *workorderNotificationService) resolveTestRecipients(
+	ctx context.Context,
+	notificationConfig *model.WorkorderNotification,
+	channel string,
+) []testRecipient {
+	seen := make(map[string]struct{})
+	var result []testRecipient
+
+	addUser := func(userID int) {
+		if userID <= 0 {
+			return
+		}
+		key := fmt.Sprintf("%d", userID)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		user, err := s.userDAO.GetByID(ctx, userID)
+		if err != nil || user == nil {
+			return
+		}
+		addr := ""
+		switch channel {
+		case model.NotificationChannelEmail:
+			addr = user.Email
+		case model.NotificationChannelFeishu:
+			addr = user.FeiShuUserId
+		case model.NotificationChannelSMS:
+			addr = user.Mobile
+		}
+		if addr == "" {
+			s.logger.Warn("测试发送跳过无渠道地址的用户",
+				zap.Int("user_id", userID),
+				zap.String("channel", channel))
+			return
+		}
+		seen[key] = struct{}{}
+		name := user.RealName
+		if name == "" {
+			name = user.Username
+		}
+		result = append(result, testRecipient{ID: key, Name: name, Addr: addr})
+	}
+
+	for _, recipientType := range notificationConfig.RecipientTypes {
+		switch recipientType {
+		case model.RecipientTypeUser, model.RecipientTypeCustom:
+			for _, userIDStr := range notificationConfig.RecipientUsers {
+				userID, err := strconv.Atoi(userIDStr)
+				if err != nil {
+					continue
+				}
+				addUser(userID)
+			}
+		}
+	}
+
+	// 即便未勾选 user/custom，只要配置了 recipient_users 也用于测试发送
+	if len(result) == 0 {
+		for _, userIDStr := range notificationConfig.RecipientUsers {
+			userID, err := strconv.Atoi(userIDStr)
+			if err != nil {
+				continue
+			}
+			addUser(userID)
+		}
+	}
+
+	return result
 }
 
 // SendWorkorderNotification 发送工单相关通知
@@ -348,6 +429,189 @@ func (s *workorderNotificationService) processNotification(ctx context.Context, 
 			zap.Int("notification_id", notification.ID))
 	}
 
+	// 首次发送后建立未读催发（repeat_interval>0）
+	s.createRemindersAfterSend(ctx, notification, instance, eventType, recipients)
+
+	return nil
+}
+
+func (s *workorderNotificationService) createRemindersAfterSend(
+	ctx context.Context,
+	notification *model.WorkorderNotification,
+	instance *model.WorkorderInstance,
+	eventType string,
+	recipients []RecipientInfo,
+) {
+	if s.reminderDAO == nil || notification == nil || instance == nil {
+		return
+	}
+	if notification.RepeatInterval == nil || *notification.RepeatInterval <= 0 {
+		return
+	}
+	if isInstanceTerminal(instance.Status) {
+		return
+	}
+
+	interval := *notification.RepeatInterval
+	maxSend := notification.MaxRetries
+	if maxSend <= 0 {
+		maxSend = 3
+	}
+	now := time.Now()
+	next := now.Add(time.Duration(interval) * time.Minute)
+
+	for _, rec := range recipients {
+		userID, err := strconv.Atoi(rec.ID)
+		if err != nil || userID <= 0 {
+			continue
+		}
+		reminder := &model.WorkorderNotificationReminder{
+			NotificationID:  notification.ID,
+			InstanceID:      instance.ID,
+			UserID:          userID,
+			EventType:       eventType,
+			Status:          model.ReminderStatusPending,
+			SentCount:       1,
+			MaxSend:         maxSend,
+			IntervalMinutes: interval,
+			LastSentAt:      &now,
+			NextSendAt:      &next,
+		}
+		if err := s.reminderDAO.UpsertReminder(ctx, reminder); err != nil {
+			s.logger.Error("创建催发记录失败",
+				zap.Error(err),
+				zap.Int("notification_id", notification.ID),
+				zap.Int("instance_id", instance.ID),
+				zap.Int("user_id", userID))
+		}
+	}
+}
+
+func isInstanceTerminal(status int8) bool {
+	return status == model.InstanceStatusCompleted ||
+		status == model.InstanceStatusCancelled ||
+		status == model.InstanceStatusRejected
+}
+
+func (s *workorderNotificationService) AcknowledgeByUser(ctx context.Context, instanceID, userID int) error {
+	if s.reminderDAO == nil {
+		return nil
+	}
+	return s.reminderDAO.AcknowledgeByUser(ctx, instanceID, userID)
+}
+
+func (s *workorderNotificationService) StopRemindersByInstance(ctx context.Context, instanceID int) error {
+	if s.reminderDAO == nil {
+		return nil
+	}
+	return s.reminderDAO.StopByInstance(ctx, instanceID)
+}
+
+func (s *workorderNotificationService) ProcessDueReminders(ctx context.Context) error {
+	if s.reminderDAO == nil {
+		return nil
+	}
+
+	dueList, err := s.reminderDAO.ListDuePending(ctx, time.Now(), 100)
+	if err != nil {
+		return err
+	}
+	if len(dueList) == 0 {
+		return nil
+	}
+
+	s.logger.Info("开始处理到期催发", zap.Int("count", len(dueList)))
+
+	for _, reminder := range dueList {
+		if err := s.processOneReminder(ctx, reminder); err != nil {
+			s.logger.Error("处理催发失败",
+				zap.Error(err),
+				zap.Int("reminder_id", reminder.ID),
+				zap.Int("instance_id", reminder.InstanceID))
+		}
+	}
+	return nil
+}
+
+func (s *workorderNotificationService) processOneReminder(ctx context.Context, reminder *model.WorkorderNotificationReminder) error {
+	notification, err := s.dao.GetNotificationByID(ctx, reminder.NotificationID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			reminder.Status = model.ReminderStatusStopped
+			reminder.NextSendAt = nil
+			_ = s.reminderDAO.UpdateReminder(ctx, reminder)
+			return nil
+		}
+		return err
+	}
+	if notification.Status != model.NotificationStatusEnabled {
+		reminder.Status = model.ReminderStatusStopped
+		reminder.NextSendAt = nil
+		return s.reminderDAO.UpdateReminder(ctx, reminder)
+	}
+
+	instance, err := s.instanceDAO.GetInstanceByID(ctx, reminder.InstanceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			reminder.Status = model.ReminderStatusStopped
+			reminder.NextSendAt = nil
+			_ = s.reminderDAO.UpdateReminder(ctx, reminder)
+			return nil
+		}
+		return err
+	}
+	if isInstanceTerminal(instance.Status) {
+		reminder.Status = model.ReminderStatusStopped
+		reminder.NextSendAt = nil
+		return s.reminderDAO.UpdateReminder(ctx, reminder)
+	}
+
+	if reminder.SentCount >= reminder.MaxSend {
+		reminder.Status = model.ReminderStatusStopped
+		reminder.NextSendAt = nil
+		return s.reminderDAO.UpdateReminder(ctx, reminder)
+	}
+
+	user, err := s.userDAO.GetByID(ctx, reminder.UserID)
+	if err != nil || user == nil {
+		reminder.Status = model.ReminderStatusStopped
+		reminder.NextSendAt = nil
+		_ = s.reminderDAO.UpdateReminder(ctx, reminder)
+		return fmt.Errorf("催发接收人无效: %w", err)
+	}
+
+	recipients := []RecipientInfo{{
+		ID:   fmt.Sprintf("%d", user.ID),
+		Name: user.RealName,
+		Type: model.RecipientTypeUser,
+	}}
+
+	customContent := fmt.Sprintf("【未读催发 %d/%d】请及时打开工单查看", reminder.SentCount+1, reminder.MaxSend)
+	var sendErrs []string
+	for _, channel := range notification.Channels {
+		if err := s.sendChannelNotification(ctx, notification, instance, channel, recipients, reminder.EventType, 0, customContent); err != nil {
+			sendErrs = append(sendErrs, err.Error())
+		}
+	}
+
+	now := time.Now()
+	reminder.SentCount++
+	reminder.LastSentAt = &now
+	if reminder.SentCount >= reminder.MaxSend {
+		reminder.Status = model.ReminderStatusStopped
+		reminder.NextSendAt = nil
+	} else {
+		next := now.Add(time.Duration(reminder.IntervalMinutes) * time.Minute)
+		reminder.NextSendAt = &next
+		reminder.Status = model.ReminderStatusPending
+	}
+
+	if err := s.reminderDAO.UpdateReminder(ctx, reminder); err != nil {
+		return err
+	}
+	if len(sendErrs) > 0 {
+		return fmt.Errorf("部分渠道催发失败: %s", sendErrs[0])
+	}
 	return nil
 }
 
@@ -404,7 +668,18 @@ func (s *workorderNotificationService) getRecipients(ctx context.Context, notifi
 			s.logger.Info("部门用户通知暂未实现",
 				zap.Strings("depts", notification.RecipientDepts))
 		case model.RecipientTypeCustom:
-			s.logger.Info("自定义用户通知暂未实现")
+			// 与指定用户相同：使用 recipient_users
+			for _, userIDStr := range notification.RecipientUsers {
+				if userID, err := strconv.Atoi(userIDStr); err == nil {
+					if user, err := s.userDAO.GetByID(ctx, userID); err == nil {
+						recipients = append(recipients, RecipientInfo{
+							ID:   userIDStr,
+							Name: user.RealName,
+							Type: recipientType,
+						})
+					}
+				}
+			}
 		}
 	}
 
