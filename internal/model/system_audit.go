@@ -157,6 +157,17 @@ type ArchiveAuditLogsRequest struct {
 	EndTime   int64 `json:"end_time" binding:"required"`
 }
 
+// ExportAuditLogsRequest 导出审计日志（不受列表分页 max=100 限制）
+type ExportAuditLogsRequest struct {
+	Search        string `json:"search" form:"search"`
+	OperationType string `json:"operation_type" form:"operation_type"`
+	TargetType    string `json:"target_type" form:"target_type"`
+	StatusCode    int    `json:"status_code" form:"status_code"`
+	StartTime     int64  `json:"start_time" form:"start_time"`
+	EndTime       int64  `json:"end_time" form:"end_time"`
+	Limit         int    `json:"limit" form:"limit"` // 默认 5000，最大 10000
+}
+
 type AuditTypeInfo struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`

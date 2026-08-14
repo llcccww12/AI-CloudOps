@@ -55,6 +55,12 @@ func (h *NotificationHandler) RegisterRouters(server *gin.Engine) {
 		notificationGroup.POST("/test/send", h.TestSendNotification)
 		notificationGroup.GET("/channels", h.GetAvailableChannels)
 		notificationGroup.POST("/send", h.SendNotificationManually)
+		notificationGroup.GET("/inbox/list", h.ListInbox)
+		notificationGroup.GET("/inbox/unread_count", h.CountUnreadInbox)
+		notificationGroup.POST("/inbox/read/:id", h.MarkInboxRead)
+		notificationGroup.POST("/inbox/read_all", h.MarkAllInboxRead)
+		notificationGroup.DELETE("/inbox/clear", h.ClearInbox)
+		notificationGroup.POST("/:id/duplicate", h.DuplicateNotification)
 	}
 }
 
@@ -154,5 +160,59 @@ func (h *NotificationHandler) SendNotificationManually(ctx *gin.Context) {
 
 	base.HandleRequest(ctx, &req, func() (interface{}, error) {
 		return nil, h.service.SendNotificationByChannels(ctx.Request.Context(), req.Channels, req.Recipient, req.Subject, req.Content)
+	})
+}
+
+func (h *NotificationHandler) DuplicateNotification(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	base.HandleRequest(ctx, nil, func() (interface{}, error) {
+		return nil, h.service.DuplicateNotification(ctx.Request.Context(), id, user.Uid)
+	})
+}
+
+func (h *NotificationHandler) ListInbox(ctx *gin.Context) {
+	var req model.ListWorkorderInboxReq
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	req.UserID = user.Uid
+	base.HandleRequest(ctx, &req, func() (interface{}, error) {
+		return h.service.ListInbox(ctx.Request.Context(), &req)
+	})
+}
+
+func (h *NotificationHandler) CountUnreadInbox(ctx *gin.Context) {
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	base.HandleRequest(ctx, nil, func() (interface{}, error) {
+		return h.service.CountUnreadInbox(ctx.Request.Context(), user.Uid)
+	})
+}
+
+func (h *NotificationHandler) MarkInboxRead(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	base.HandleRequest(ctx, nil, func() (interface{}, error) {
+		return nil, h.service.MarkInboxRead(ctx.Request.Context(), id, user.Uid)
+	})
+}
+
+func (h *NotificationHandler) MarkAllInboxRead(ctx *gin.Context) {
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	base.HandleRequest(ctx, nil, func() (interface{}, error) {
+		return nil, h.service.MarkAllInboxRead(ctx.Request.Context(), user.Uid)
+	})
+}
+
+func (h *NotificationHandler) ClearInbox(ctx *gin.Context) {
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	base.HandleRequest(ctx, nil, func() (interface{}, error) {
+		return nil, h.service.ClearInbox(ctx.Request.Context(), user.Uid)
 	})
 }

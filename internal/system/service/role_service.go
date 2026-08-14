@@ -28,9 +28,11 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/system/dao"
+	"github.com/GoSimplicity/AI-CloudOps/internal/system/utils"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -283,13 +285,26 @@ func (s *roleService) GetUserRoles(ctx context.Context, userID int) (*model.List
 }
 
 func (s *roleService) CheckUserPermission(ctx context.Context, userID int, method, path string) (bool, error) {
-	hasPermission, err := s.roleDao.CheckPermission(ctx, userID, method, path)
+	methodCode, ok := utils.MethodCode(method)
+	if !ok {
+		return false, fmt.Errorf("不支持的HTTP方法: %s", method)
+	}
+
+	apis, err := s.roleDao.GetPermissions(ctx, userID)
 	if err != nil {
 		s.l.Error("检查用户权限失败", zap.Error(err))
 		return false, err
 	}
 
-	return hasPermission, nil
+	for _, api := range apis {
+		if api == nil {
+			continue
+		}
+		if utils.MatchAPIPath(api.Path, path, methodCode, api.Method) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *roleService) GetUserPermissions(ctx context.Context, userID int) (*model.ListResp[*model.Api], error) {

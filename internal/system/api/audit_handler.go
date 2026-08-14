@@ -26,6 +26,12 @@
 package api
 
 import (
+	"encoding/csv"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/system/service"
 	"github.com/GoSimplicity/AI-CloudOps/pkg/base"
@@ -54,6 +60,7 @@ func (h *AuditHandler) RegisterRouters(server *gin.Engine) {
 
 	auditGroup.GET("/statistics", h.GetAuditStatistics)
 	auditGroup.GET("/types", h.GetAuditTypes)
+	auditGroup.GET("/export", h.ExportAuditLogs)
 
 	// 管理接口 - 需要管理员权限
 	auditGroup.DELETE("/:id", h.DeleteAuditLog)
@@ -158,4 +165,57 @@ func (h *AuditHandler) ArchiveAuditLogs(ctx *gin.Context) {
 	base.HandleRequest(ctx, &req, func() (interface{}, error) {
 		return nil, h.svc.ArchiveAuditLogs(ctx.Request.Context(), &req)
 	})
+}
+
+// ExportAuditLogs 导出审计日志为 CSV
+func (h *AuditHandler) ExportAuditLogs(ctx *gin.Context) {
+	var req model.ExportAuditLogsRequest
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+
+	logs, err := h.svc.ExportAuditLogs(ctx.Request.Context(), &req)
+	if err != nil {
+		h.logger.Error("导出审计日志失败", zap.Error(err))
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+
+	filename := fmt.Sprintf("audit_logs_%s.csv", time.Now().Format("20060102_150405"))
+	ctx.Header("Content-Type", "text/csv; charset=utf-8")
+	ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	ctx.Writer.WriteHeader(http.StatusOK)
+	// UTF-8 BOM，便于 Excel 正确识别中文
+	_, _ = ctx.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(ctx.Writer)
+	defer writer.Flush()
+
+	_ = writer.Write([]string{
+		"ID", "用户ID", "TraceID", "IP", "方法", "接口", "操作类型", "目标类型",
+		"目标ID", "状态码", "耗时(ms)", "错误信息", "创建时间",
+	})
+
+	for _, log := range logs {
+		createdAt := ""
+		if !log.CreatedAt.IsZero() {
+			createdAt = log.CreatedAt.Format("2006-01-02 15:04:05")
+		}
+		_ = writer.Write([]string{
+			strconv.Itoa(log.ID),
+			strconv.Itoa(log.UserID),
+			log.TraceID,
+			log.IPAddress,
+			log.HttpMethod,
+			log.Endpoint,
+			log.OperationType,
+			log.TargetType,
+			log.TargetID,
+			strconv.Itoa(log.StatusCode),
+			strconv.FormatInt(log.Duration, 10),
+			log.ErrorMsg,
+			createdAt,
+		})
+	}
 }

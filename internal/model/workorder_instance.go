@@ -44,6 +44,18 @@ const (
 )
 
 const (
+	InstanceListScopeTodo    = "todo"
+	InstanceListScopeMine    = "mine"
+	InstanceListScopeAll     = "all"
+	InstanceListScopeArchive = "archive"
+)
+
+const (
+	AssignModeTransfer = "transfer" // 同节点转办/协同
+	AssignModeForward  = "forward"  // 流转到下一节点
+)
+
+const (
 	FlowRecordTypeUser   int8 = 1 // 用户操作
 	FlowRecordTypeSystem int8 = 2 // 系统操作
 )
@@ -120,9 +132,22 @@ type DetailWorkorderInstanceReq struct {
 
 type ListWorkorderInstanceReq struct {
 	ListReq
-	Status    *int8 `json:"status" form:"status" binding:"omitempty,oneof=1 2 3 4 5 6"`
-	Priority  *int8 `json:"priority" form:"priority" binding:"omitempty,oneof=1 2 3"`
-	ProcessID *int  `json:"process_id" form:"process_id" binding:"omitempty,min=1"`
+	Status    *int8  `json:"status" form:"status" binding:"omitempty,oneof=1 2 3 4 5 6"`
+	Priority  *int8  `json:"priority" form:"priority" binding:"omitempty,oneof=1 2 3"`
+	ProcessID *int   `json:"process_id" form:"process_id" binding:"omitempty,min=1"`
+	Scope     string `json:"scope" form:"scope" binding:"omitempty,oneof=todo mine all archive"` // 待办/我发起/进行中/归档
+	UserID    int    `json:"-" form:"-"`                                                         // 服务端注入当前用户
+}
+
+// ExportWorkorderInstanceReq 导出工单实例（不受列表分页限制）
+type ExportWorkorderInstanceReq struct {
+	Search    string `json:"search" form:"search"`
+	Status    *int8  `json:"status" form:"status" binding:"omitempty,oneof=1 2 3 4 5 6"`
+	Priority  *int8  `json:"priority" form:"priority" binding:"omitempty,oneof=1 2 3"`
+	ProcessID *int   `json:"process_id" form:"process_id" binding:"omitempty,min=1"`
+	Scope     string `json:"scope" form:"scope" binding:"omitempty,oneof=todo mine all archive"`
+	UserID    int    `json:"-" form:"-"`
+	Limit     int    `json:"limit" form:"limit"`
 }
 
 // 提交工单
@@ -132,8 +157,10 @@ type SubmitWorkorderInstanceReq struct {
 
 // 指派工单
 type AssignWorkorderInstanceReq struct {
-	ID         int `json:"id" form:"id" binding:"required,min=1"`
-	AssigneeID int `json:"assignee_id" binding:"required,min=1"`
+	ID         int    `json:"id" form:"id" binding:"required,min=1"`
+	AssigneeID int    `json:"assignee_id" binding:"required,min=1"`
+	Mode       string `json:"mode" binding:"omitempty,oneof=transfer forward"`
+	Comment    string `json:"comment" binding:"omitempty,max=500"`
 }
 
 // 通过工单

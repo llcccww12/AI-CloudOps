@@ -327,7 +327,7 @@ func (e *EmailChannel) buildEmailContent(request *SendRequest) string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>AI-CloudOps 工单通知</title>
+    <title>CacOps 工单通知</title>
     <style>
         * { 
             box-sizing: border-box; 
@@ -687,7 +687,7 @@ func (e *EmailChannel) buildEmailContent(request *SendRequest) string {
                 <div class="header-content">
                     <div class="logo-section">
                         <div class="logo-icon">⚡</div>
-                        <div class="logo-text">AI-CloudOps</div>
+                        <div class="logo-text">CacOps</div>
                     </div>
                     <div class="notification-type">%s</div>
                 </div>
@@ -737,15 +737,15 @@ func (e *EmailChannel) buildEmailContent(request *SendRequest) string {
             </div>
             
             <div class="footer">
-                <div class="footer-brand">AI-CloudOps 运维管理平台</div>
+                <div class="footer-brand">CacOps 运维管理平台</div>
                 <div class="footer-links">
                     <a href="#">帮助中心</a>
                     <a href="#">技术支持</a>
                     <a href="#">系统状态</a>
                 </div>
-                <div class="footer-text">此邮件由AI-CloudOps系统发送，请勿直接回复</div>
+                <div class="footer-text">此邮件由CacOps系统发送，请勿直接回复</div>
                 <div class="footer-text">如有疑问请联系技术支持 | 服务热线：400-000-0000</div>
-                <div class="footer-text">Copyright © 2024 AI-CloudOps. All rights reserved.</div>
+                <div class="footer-text">Copyright © 2024 CacOps. All rights reserved.</div>
             </div>
         </div>
     </div>

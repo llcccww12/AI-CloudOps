@@ -110,7 +110,7 @@ type GetUserPermissionsRequest struct {
 }
 
 type CheckUserPermissionRequest struct {
-	UserID int    `json:"user_id" binding:"required,gt=0"`
+	UserID int    `json:"user_id"` // 可选；未传时使用当前登录用户
 	Method string `json:"method" binding:"required"`
 	Path   string `json:"path" binding:"required"`
 }

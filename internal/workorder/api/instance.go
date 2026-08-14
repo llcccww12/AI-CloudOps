@@ -26,6 +26,12 @@
 package api
 
 import (
+	"encoding/csv"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/workorder/service"
 	"github.com/GoSimplicity/AI-CloudOps/pkg/base"
@@ -51,6 +57,7 @@ func (h *InstanceHandler) RegisterRouters(server *gin.Engine) {
 		instanceGroup.PUT("/update/:id", h.UpdateInstance)
 		instanceGroup.DELETE("/delete/:id", h.DeleteInstance)
 		instanceGroup.GET("/list", h.ListInstance)
+		instanceGroup.GET("/export", h.ExportInstance)
 		instanceGroup.GET("/detail/:id", h.DetailInstance)
 		instanceGroup.POST("/submit/:id", h.SubmitInstance)
 		instanceGroup.POST("/assign/:id", h.AssignInstance)
@@ -142,10 +149,76 @@ func (h *InstanceHandler) DetailInstance(ctx *gin.Context) {
 
 func (h *InstanceHandler) ListInstance(ctx *gin.Context) {
 	var req model.ListWorkorderInstanceReq
+	user := ctx.MustGet("user").(jwt.UserClaims)
 
 	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.UserID = user.Uid
 		return h.service.ListInstance(ctx.Request.Context(), &req)
 	})
+}
+
+func (h *InstanceHandler) ExportInstance(ctx *gin.Context) {
+	var req model.ExportWorkorderInstanceReq
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	req.UserID = user.Uid
+
+	logs, err := h.service.ExportInstance(ctx.Request.Context(), &req)
+	if err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+
+	filename := fmt.Sprintf("workorder_instances_%s.csv", time.Now().Format("20060102_150405"))
+	ctx.Header("Content-Type", "text/csv; charset=utf-8")
+	ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	ctx.Writer.WriteHeader(http.StatusOK)
+	_, _ = ctx.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(ctx.Writer)
+	defer writer.Flush()
+
+	_ = writer.Write([]string{
+		"ID", "编号", "标题", "流程ID", "状态", "优先级", "创建人", "创建人ID",
+		"处理人ID", "描述", "创建时间", "完成时间",
+	})
+
+	statusName := map[int8]string{
+		1: "草稿", 2: "待处理", 3: "处理中", 4: "已完成", 5: "已拒绝", 6: "已取消",
+	}
+	priorityName := map[int8]string{1: "高", 2: "中", 3: "低"}
+
+	for _, item := range logs {
+		assignee := ""
+		if item.AssigneeID != nil {
+			assignee = strconv.Itoa(*item.AssigneeID)
+		}
+		createdAt := ""
+		if !item.CreatedAt.IsZero() {
+			createdAt = item.CreatedAt.Format("2006-01-02 15:04:05")
+		}
+		completedAt := ""
+		if item.CompletedAt != nil {
+			completedAt = item.CompletedAt.Format("2006-01-02 15:04:05")
+		}
+		_ = writer.Write([]string{
+			strconv.Itoa(item.ID),
+			item.SerialNumber,
+			item.Title,
+			strconv.Itoa(item.ProcessID),
+			statusName[item.Status],
+			priorityName[item.Priority],
+			item.OperatorName,
+			strconv.Itoa(item.OperatorID),
+			assignee,
+			item.Description,
+			createdAt,
+			completedAt,
+		})
+	}
 }
 
 // SubmitInstance 提交工单
@@ -180,7 +253,7 @@ func (h *InstanceHandler) AssignInstance(ctx *gin.Context) {
 	user := ctx.MustGet("user").(jwt.UserClaims)
 
 	base.HandleRequest(ctx, &req, func() (any, error) {
-		return nil, h.service.AssignInstance(ctx.Request.Context(), req.ID, req.AssigneeID, user.Uid, user.Username)
+		return nil, h.service.AssignInstance(ctx.Request.Context(), req.ID, req.AssigneeID, user.Uid, user.Username, req.Mode, req.Comment)
 	})
 }
 

@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/system/service"
+	"github.com/GoSimplicity/AI-CloudOps/internal/system/utils"
 	"github.com/GoSimplicity/AI-CloudOps/pkg/base"
 	"github.com/GoSimplicity/AI-CloudOps/pkg/jwt"
 	"github.com/gin-gonic/gin"
@@ -52,12 +53,9 @@ var skipPrefixes = []string{
 	"/api/tree/local/terminal",
 }
 
-// HTTP方法映射
-var methodMapping = map[string]int8{
-	"GET":    1,
-	"POST":   2,
-	"PUT":    3,
-	"DELETE": 4,
+// 登录后即可访问、不再走角色 API 授权的前缀（仅本人数据）
+var skipPermissionPrefixes = []string{
+	"/api/workorder/notification/inbox/",
 }
 
 type AuthMiddleware struct {
@@ -76,47 +74,6 @@ func hasPrefix(path string, prefixes []string) bool {
 			return true
 		}
 	}
-	return false
-}
-
-func matchWildcardPath(apiPath, requestPath string, methodCode int8, apiMethod int8) bool {
-	// 方法不匹配则返回false
-	if apiMethod != methodCode {
-		return false
-	}
-
-	// 完全匹配
-	if apiPath == requestPath {
-		return true
-	}
-
-	// 全局通配符匹配所有路径
-	if apiPath == "/*" {
-		return true
-	}
-
-	if !strings.Contains(apiPath, "*") {
-		return false
-	}
-
-	// 末尾通配符：/api/user/*
-	if strings.HasSuffix(apiPath, "*") {
-		prefix := strings.TrimSuffix(apiPath, "*")
-		return strings.HasPrefix(requestPath, prefix)
-	}
-
-	// 开头通配符：*/logs
-	if strings.HasPrefix(apiPath, "*") {
-		suffix := strings.TrimPrefix(apiPath, "*")
-		return strings.HasSuffix(requestPath, suffix)
-	}
-
-	// 中间通配符：/api/*/logs
-	if strings.Count(apiPath, "*") == 1 {
-		parts := strings.Split(apiPath, "*")
-		return strings.HasPrefix(requestPath, parts[0]) && strings.HasSuffix(requestPath, parts[1])
-	}
-
 	return false
 }
 
@@ -166,10 +123,14 @@ func (am *AuthMiddleware) CheckAuth() gin.HandlerFunc {
 			return
 		}
 
+		if hasPrefix(path, skipPermissionPrefixes) {
+			c.Next()
+			return
+		}
+
 		// 获取HTTP方法代码
-		method := c.Request.Method
-		methodCode, exists := methodMapping[method]
-		if !exists {
+		methodCode, ok := utils.MethodCode(c.Request.Method)
+		if !ok {
 			base.ErrorWithMessage(c, "不支持的HTTP方法")
 			c.Abort()
 			return
@@ -190,7 +151,7 @@ func (am *AuthMiddleware) CheckAuth() gin.HandlerFunc {
 
 			// 检查API权限
 			for _, api := range role.Apis {
-				if matchWildcardPath(api.Path, path, methodCode, api.Method) {
+				if utils.MatchAPIPath(api.Path, path, methodCode, api.Method) {
 					c.Next()
 					return
 				}

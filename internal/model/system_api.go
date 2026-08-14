@@ -33,7 +33,7 @@ type Api struct {
 	Description string  `json:"description" gorm:"type:varchar(500);comment:API描述"`                                 // API描述
 	Version     string  `json:"version" gorm:"type:varchar(20);default:v1;comment:API版本"`                           // API版本，默认v1
 	Category    int8    `json:"category" gorm:"type:tinyint(1);not null;comment:API分类 1系统 2业务" binding:"oneof=1 2"` // API分类，使用int8节省空间
-	IsPublic    int8    `json:"is_public" gorm:"type:tinyint(1);default:0;comment:是否公开 0否 1是" binding:"oneof=0 1"`  // 是否公开，使用int8节省空间
+	IsPublic    int8    `json:"is_public" gorm:"type:tinyint(1);default:2;comment:是否公开 1公开 2私有" binding:"oneof=1 2"` // 是否公开：1公开 2私有
 	Users       []*User `json:"users" gorm:"many2many:cl_user_apis;comment:关联用户"`                                   // 多对多关联用户
 }
 

@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -206,6 +207,8 @@ func (wc *webhookContent) GenerateFeishuCardContentOneAlert(ctx context.Context,
 		sendGroupUrl,
 	)
 	BackendDomain := viper.GetString("webhook.backend_domain")
+	FrontDomain := strings.TrimPrefix(strings.TrimPrefix(viper.GetString("webhook.front_domain"), "https://"), "http://")
+	autoFixURL := buildAutoFixDeepLink(FrontDomain, alert.Labels, alert.Annotations, alert.Fingerprint)
 	// 构建各类操作的 URL
 	buttonURLs := []string{
 		fmt.Sprintf(constant.RenderingURLTemplate, BackendDomain, "renling", alert.Fingerprint),    // 认领告警
@@ -230,6 +233,7 @@ func (wc *webhookContent) GenerateFeishuCardContentOneAlert(ctx context.Context,
 		msgGrafana,       // 查看 Grafana 大盘图
 		msgSendGroup,     // 修改发送组
 		msgExpr,          // 修改告警规则
+		autoFixURL,       // 打开 AutoFix（人工确认）
 		buttonURLs[0],    // 认领告警 URL
 		buttonURLs[1],    // 屏蔽1小时 URL
 		buttonURLs[2],    // 屏蔽24小时 URL
@@ -263,11 +267,58 @@ func (wc *webhookContent) GenerateFeishuCardContentOneAlert(ctx context.Context,
 	return nil
 }
 
+// firstNonEmpty 返回第一个非空字符串
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// buildAutoFixDeepLink 构造前端 AutoFix 深链（仅打开预填表单，不自动执行）
+func buildAutoFixDeepLink(frontDomain string, labels, annotations map[string]string, fingerprint string) string {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	query := url.Values{}
+	ns := firstNonEmpty(labels["namespace"], labels["ns"])
+	deployment := firstNonEmpty(
+		labels["deployment"],
+		labels["workload"],
+		labels["Deployment"],
+		labels["job"],
+		labels["pod"],
+	)
+	summary := firstNonEmpty(annotations["summary"], labels["alertname"], annotations["description"])
+	if ns != "" {
+		query.Set("namespace", ns)
+	}
+	if deployment != "" {
+		query.Set("deployment", deployment)
+	}
+	if summary != "" {
+		query.Set("summary", summary)
+	}
+	if fingerprint != "" {
+		query.Set("alertFingerprint", fingerprint)
+	}
+	domain := strings.TrimSpace(frontDomain)
+	if domain == "" {
+		domain = "localhost:3000"
+	}
+	return fmt.Sprintf(constant.AutoFixURLTemplate, domain, query.Encode())
+}
+
 // buildFeishuCardContent 构建 Feishu 卡片内容的 JSON 字符串
 func (wc *webhookContent) buildFeishuCardContent(
 	alertHeaderColor, alertHeader, msgLabel, msgAnno, msgSeverity, msgStatus,
 	msgTime, msgUpgrade, msgOnduty, msgGrafana, msgSendGroup, msgExpr string,
-	buttonURL1, buttonURL2, buttonURL3,
+	autoFixURL, buttonURL1, buttonURL2, buttonURL3,
 	buttonURL4, buttonURL5, buttonURL6 string,
 ) (string, error) {
 
@@ -285,6 +336,7 @@ func (wc *webhookContent) buildFeishuCardContent(
 		msgGrafana,       // 查看 Grafana 大盘图
 		msgSendGroup,     // 修改发送组
 		msgExpr,          // 修改告警规则
+		autoFixURL,       // 打开 AutoFix
 		buttonURL1,       // 认领告警 URL
 		buttonURL2,       // 屏蔽1小时 URL
 		buttonURL3,       // 屏蔽24小时 URL

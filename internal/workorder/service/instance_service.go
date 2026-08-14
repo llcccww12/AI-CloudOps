@@ -55,7 +55,7 @@ type InstanceService interface {
 	MarkNotificationRead(ctx context.Context, instanceID, userID int)
 	ListInstance(ctx context.Context, req *model.ListWorkorderInstanceReq) (*model.ListResp[*model.WorkorderInstance], error)
 	SubmitInstance(ctx context.Context, id int, operatorID int, operatorName string) error
-	AssignInstance(ctx context.Context, id int, assigneeID int, operatorID int, operatorName string) error
+	AssignInstance(ctx context.Context, id int, assigneeID int, operatorID int, operatorName string, mode string, comment string) error
 	ApproveInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
 	RejectInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
 	CancelInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
@@ -63,6 +63,7 @@ type InstanceService interface {
 	ReturnInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
 	GetAvailableActions(ctx context.Context, instanceID int, operatorID int) ([]string, error)
 	GetCurrentStep(ctx context.Context, instanceID int) (*model.ProcessStep, error)
+	ExportInstance(ctx context.Context, req *model.ExportWorkorderInstanceReq) ([]*model.WorkorderInstance, error)
 }
 
 type instanceService struct {
@@ -404,6 +405,9 @@ func (s *instanceService) ListInstance(ctx context.Context, req *model.ListWorko
 		s.logger.Error("获取工单实例列表失败", zap.Error(err))
 		return nil, err
 	}
+	if result == nil {
+		result = []*model.WorkorderInstance{}
+	}
 
 	return &model.ListResp[*model.WorkorderInstance]{
 		Items: result,
@@ -482,41 +486,44 @@ func (s *instanceService) SubmitInstance(ctx context.Context, id int, operatorID
 	return nil
 }
 
-// AssignInstance 指派工单
-func (s *instanceService) AssignInstance(ctx context.Context, id int, assigneeID int, operatorID int, operatorName string) error {
+// AssignInstance 指派工单。transfer=同节点转办/协同，forward=当前节点处理完后流转到下一节点。
+func (s *instanceService) AssignInstance(ctx context.Context, id int, assigneeID int, operatorID int, operatorName string, mode string, comment string) error {
+	if mode == "" {
+		mode = model.AssignModeTransfer
+	}
+	if assigneeID <= 0 {
+		return fmt.Errorf("无效的受理人ID")
+	}
+
 	instance, err := s.dao.GetInstanceByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	if instance.Status != model.InstanceStatusPending {
-		return fmt.Errorf("只有待处理状态的工单可以指派")
+	if instance.Status != model.InstanceStatusPending && instance.Status != model.InstanceStatusProcessing {
+		return fmt.Errorf("只有待处理或处理中的工单可以指派")
 	}
 
-	availableActions, err := s.GetAvailableActions(ctx, id, operatorID)
+	currentStep, err := s.GetCurrentStep(ctx, id)
 	if err != nil {
-		return fmt.Errorf("获取可用动作失败: %w", err)
+		return fmt.Errorf("获取当前步骤失败: %w", err)
 	}
 
-	actionAllowed := false
-	for _, action := range availableActions {
-		if action == model.FlowActionAssign {
-			actionAllowed = true
-			break
+	assigned := instance.AssigneeID != nil && *instance.AssigneeID > 0
+	if assigned {
+		if err := s.ensureAssigneePermission(instance, operatorID); err != nil {
+			return err
 		}
+	} else if !s.canUserClaim(currentStep, operatorID) {
+		return fmt.Errorf("当前用户无权领取或指派此工单")
 	}
 
-	if !actionAllowed {
-		return fmt.Errorf("当前用户无权限指派此工单")
-	}
-
-	if assigneeID <= 0 {
-		return fmt.Errorf("无效的受理人ID")
+	if mode == model.AssignModeForward {
+		return s.forwardInstance(ctx, instance, currentStep, assigneeID, operatorID, operatorName, comment)
 	}
 
 	fromStatus := instance.Status
 	toStatus := model.InstanceStatusProcessing
-
 	if err := s.dao.UpdateInstanceAssignee(ctx, id, &assigneeID); err != nil {
 		return err
 	}
@@ -524,14 +531,84 @@ func (s *instanceService) AssignInstance(ctx context.Context, id int, assigneeID
 		return err
 	}
 
-	s.createFlowRecord(ctx, id, model.FlowActionAssign, operatorID, operatorName, fromStatus, toStatus, "", 2)
+	note := comment
+	if note == "" {
+		if assigned {
+			note = fmt.Sprintf("转办给用户ID: %d", assigneeID)
+		} else {
+			note = fmt.Sprintf("领取/指派给用户ID: %d", assigneeID)
+		}
+	}
 
-	s.createTimelineRecord(ctx, id, model.TimelineActionAssign, operatorID, operatorName, fmt.Sprintf("工单指派给用户ID: %d", assigneeID))
-
-	// 发送工单指派通知
-	s.sendNotificationAsync(id, model.EventTypeInstanceAssigned, fmt.Sprintf("指派给用户ID: %d", assigneeID))
-
+	s.createFlowRecord(ctx, id, model.FlowActionAssign, operatorID, operatorName, fromStatus, toStatus, note, 2)
+	s.createTimelineRecord(ctx, id, model.TimelineActionAssign, operatorID, operatorName, note)
+	s.sendNotificationAsync(id, model.EventTypeInstanceAssigned, note)
 	return nil
+}
+
+func (s *instanceService) forwardInstance(ctx context.Context, instance *model.WorkorderInstance, currentStep *model.ProcessStep, assigneeID, operatorID int, operatorName, comment string) error {
+	definition, err := s.loadProcessDefinition(ctx, instance.ProcessID)
+	if err != nil {
+		return err
+	}
+	nextStep := s.getNextStep(currentStep, definition)
+	if nextStep == nil || nextStep.Type == model.ProcessStepTypeEnd {
+		return fmt.Errorf("当前已是最后节点，请使用完成结单将工单归档")
+	}
+
+	fromStatus := instance.Status
+	toStatus := s.getStatusForStep(nextStep)
+	if toStatus == model.InstanceStatusCompleted {
+		return fmt.Errorf("当前已是最后节点，请使用完成结单将工单归档")
+	}
+
+	instance.Status = toStatus
+	instance.CurrentStepID = &nextStep.ID
+	instance.AssigneeID = &assigneeID
+	if err := s.dao.UpdateInstance(ctx, instance); err != nil {
+		return err
+	}
+	if err := s.dao.UpdateInstanceAssignee(ctx, instance.ID, &assigneeID); err != nil {
+		return err
+	}
+
+	note := comment
+	if note == "" {
+		note = fmt.Sprintf("流转到「%s」，处理人用户ID: %d", nextStep.Name, assigneeID)
+	} else {
+		note = fmt.Sprintf("流转到「%s」：%s", nextStep.Name, note)
+	}
+
+	s.createFlowRecord(ctx, instance.ID, model.FlowActionAssign, operatorID, operatorName, fromStatus, toStatus, note, 2)
+	s.createTimelineRecord(ctx, instance.ID, model.TimelineActionAssign, operatorID, operatorName, note)
+	s.sendNotificationAsync(instance.ID, model.EventTypeInstanceAssigned, note)
+	return nil
+}
+
+func (s *instanceService) loadProcessDefinition(ctx context.Context, processID int) (model.ProcessDefinition, error) {
+	var definition model.ProcessDefinition
+	process, err := s.processDao.GetProcessByID(ctx, processID)
+	if err != nil {
+		return definition, fmt.Errorf("获取流程定义失败: %w", err)
+	}
+	definitionBytes, err := json.Marshal(process.Definition)
+	if err != nil {
+		return definition, fmt.Errorf("流程定义序列化失败: %w", err)
+	}
+	if err := json.Unmarshal(definitionBytes, &definition); err != nil {
+		return definition, fmt.Errorf("流程定义解析失败: %w", err)
+	}
+	return definition, nil
+}
+
+func (s *instanceService) canUserClaim(step *model.ProcessStep, operatorID int) bool {
+	if step == nil || operatorID <= 0 {
+		return false
+	}
+	if len(step.AssigneeIDs) == 0 {
+		return true
+	}
+	return s.canUserOperateStep(step, operatorID)
 }
 
 // ApproveInstance 审批通过工单
@@ -543,6 +620,10 @@ func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorI
 
 	if instance.Status != model.InstanceStatusPending && instance.Status != model.InstanceStatusProcessing {
 		return fmt.Errorf("只有待处理或处理中状态的工单可以审批")
+	}
+
+	if err := s.ensureAssigneePermission(instance, operatorID); err != nil {
+		return err
 	}
 
 	availableActions, err := s.GetAvailableActions(ctx, id, operatorID)
@@ -632,6 +713,12 @@ func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorI
 		return err
 	}
 
+	if toStatus != model.InstanceStatusCompleted {
+		if err := s.dao.UpdateInstanceAssignee(ctx, id, nil); err != nil {
+			s.logger.Warn("审批后清空处理人失败", zap.Error(err), zap.Int("instanceID", id))
+		}
+	}
+
 	s.createFlowRecord(ctx, id, model.FlowActionApprove, operatorID, operatorName, fromStatus, toStatus, comment, 2)
 
 	timelineComment := fmt.Sprintf("工单审批通过: %s", comment)
@@ -677,6 +764,10 @@ func (s *instanceService) RejectInstance(ctx context.Context, id int, operatorID
 
 	if instance.Status != model.InstanceStatusPending && instance.Status != model.InstanceStatusProcessing {
 		return fmt.Errorf("只有待处理或处理中状态的工单可以拒绝")
+	}
+
+	if err := s.ensureAssigneePermission(instance, operatorID); err != nil {
+		return err
 	}
 
 	availableActions, err := s.GetAvailableActions(ctx, id, operatorID)
@@ -1066,18 +1157,25 @@ func (s *instanceService) GetAvailableActions(ctx context.Context, instanceID in
 
 	s.logger.Debug("当前步骤信息", zap.String("stepID", currentStep.ID), zap.String("stepType", currentStep.Type), zap.String("assigneeType", currentStep.AssigneeType))
 
-	canOperate := s.canUserOperate(currentStep, operatorID, instance.AssigneeID)
-	s.logger.Debug("权限检查结果", zap.Bool("canOperate", canOperate))
-
-	if !canOperate {
-		s.logger.Info("用户无权限操作此工单", zap.Int("operatorID", operatorID), zap.Int("instanceID", instanceID))
-		return []string{}, nil // 无权限操作
+	assigned := instance.AssigneeID != nil && *instance.AssigneeID > 0
+	if instance.Status == model.InstanceStatusDraft {
+		if instance.OperatorID == operatorID {
+			return s.getActionsForStep(currentStep, instance.Status), nil
+		}
+		return []string{}, nil
 	}
 
-	actions := s.getActionsForStep(currentStep, instance.Status)
-	s.logger.Debug("获取到的可用动作", zap.Strings("actions", actions))
+	if assigned {
+		if *instance.AssigneeID != operatorID {
+			return []string{}, nil
+		}
+		return s.getActionsForStep(currentStep, instance.Status), nil
+	}
 
-	return actions, nil
+	if s.canUserClaim(currentStep, operatorID) {
+		return []string{model.FlowActionAssign}, nil
+	}
+	return []string{}, nil
 }
 
 func (s *instanceService) findStepByStatus(steps []model.ProcessStep, status int8) *model.ProcessStep {
@@ -1122,31 +1220,38 @@ func (s *instanceService) canUserOperate(step *model.ProcessStep, operatorID int
 		return false
 	}
 
-	// 如果工单已指派，只有指派人可以操作（优先级最高）
-	if assigneeID != nil && *assigneeID == operatorID {
-		return true
+	// 已指派时仅当前处理人可操作（创建人/管理员也不例外）
+	if assigneeID != nil && *assigneeID > 0 {
+		allowed := *assigneeID == operatorID
+		if !allowed {
+			s.logger.Info("工单已指派给其他用户，拒绝操作",
+				zap.Int("operatorID", operatorID),
+				zap.Int("assigneeID", *assigneeID))
+		}
+		return allowed
 	}
 
 	switch step.AssigneeType {
-	case model.AssigneeTypeUser:
-		// 用户类型：检查操作人是否在受理人列表中
-		for _, id := range step.AssigneeIDs {
-			if id == operatorID {
-				return true
-			}
-		}
-		// 检查用户是否可以操作当前步骤
-		if s.canUserOperateStep(step, operatorID) {
-			return true
-		}
+	case model.AssigneeTypeUser, model.AssigneeTypeGroup:
+		return s.canUserOperateStep(step, operatorID)
+	case "":
+		s.logger.Warn("步骤未配置受理人类型，拒绝操作")
 		return false
-	case model.AssigneeTypeGroup, "":
-		// 系统类型或未配置类型：允许操作（兼容性处理）
-		return true
 	default:
-		s.logger.Warn("未知的受理人类型", zap.String("assigneeType", step.AssigneeType))
-		return true // 默认允许操作，避免阻塞
+		s.logger.Warn("未知的受理人类型，拒绝操作", zap.String("assigneeType", step.AssigneeType))
+		return false
 	}
+}
+
+// ensureAssigneePermission 已指派时强制校验当前操作人必须是处理人
+func (s *instanceService) ensureAssigneePermission(instance *model.WorkorderInstance, operatorID int) error {
+	if instance == nil {
+		return fmt.Errorf("工单不存在")
+	}
+	if instance.AssigneeID != nil && *instance.AssigneeID > 0 && *instance.AssigneeID != operatorID {
+		return fmt.Errorf("工单已指派给其他处理人，您无权操作")
+	}
+	return nil
 }
 
 func (s *instanceService) getActionsForStep(step *model.ProcessStep, currentStatus int8) []string {
@@ -1162,7 +1267,7 @@ func (s *instanceService) getActionsForStep(step *model.ProcessStep, currentStat
 	case model.InstanceStatusPending:
 		actions = append(actions, model.FlowActionAssign, model.FlowActionApprove, model.FlowActionReject, model.FlowActionCancel)
 	case model.InstanceStatusProcessing:
-		actions = append(actions, model.FlowActionComplete, model.FlowActionReturn, model.FlowActionApprove, model.FlowActionReject, model.FlowActionCancel)
+		actions = append(actions, model.FlowActionAssign, model.FlowActionComplete, model.FlowActionReturn, model.FlowActionApprove, model.FlowActionReject, model.FlowActionCancel)
 	}
 
 	// 去重
@@ -1313,6 +1418,10 @@ func (s *instanceService) CompleteInstance(ctx context.Context, id int, operator
 		return fmt.Errorf("只有处理中状态的工单可以完成")
 	}
 
+	if err := s.ensureAssigneePermission(instance, operatorID); err != nil {
+		return err
+	}
+
 	availableActions, err := s.GetAvailableActions(ctx, id, operatorID)
 	if err != nil {
 		return fmt.Errorf("获取可用动作失败: %w", err)
@@ -1328,6 +1437,20 @@ func (s *instanceService) CompleteInstance(ctx context.Context, id int, operator
 
 	if !actionAllowed {
 		return fmt.Errorf("当前用户无权限完成此工单")
+	}
+
+	currentStep, err := s.GetCurrentStep(ctx, id)
+	if err != nil {
+		return fmt.Errorf("获取当前步骤失败: %w", err)
+	}
+	if currentStep != nil {
+		definition, defErr := s.loadProcessDefinition(ctx, instance.ProcessID)
+		if defErr == nil {
+			nextStep := s.getNextStep(currentStep, definition)
+			if nextStep != nil && nextStep.Type != model.ProcessStepTypeEnd {
+				return fmt.Errorf("当前还有下一节点「%s」，请使用流转指派给下一级处理人", nextStep.Name)
+			}
+		}
 	}
 
 	fromStatus := instance.Status
@@ -1381,6 +1504,10 @@ func (s *instanceService) ReturnInstance(ctx context.Context, id int, operatorID
 
 	if instance.Status != model.InstanceStatusPending && instance.Status != model.InstanceStatusProcessing {
 		return fmt.Errorf("只有待处理或处理中状态的工单可以退回")
+	}
+
+	if err := s.ensureAssigneePermission(instance, operatorID); err != nil {
+		return err
 	}
 
 	availableActions, err := s.GetAvailableActions(ctx, id, operatorID)
@@ -1449,9 +1576,8 @@ func (s *instanceService) validateFieldRequired(field model.FormField, value int
 }
 
 func (s *instanceService) canUserOperateStep(step *model.ProcessStep, operatorID int) bool {
-	// 如果没有配置受理人列表，允许任何用户操作（兼容性处理）
 	if len(step.AssigneeIDs) == 0 {
-		return true
+		return false
 	}
 
 	for _, assigneeID := range step.AssigneeIDs {
@@ -1462,7 +1588,6 @@ func (s *instanceService) canUserOperateStep(step *model.ProcessStep, operatorID
 
 	return false
 }
-
 
 func (s *instanceService) sendNotificationAsync(instanceID int, eventType string, customContent ...string) {
 	if s.notificationService == nil || instanceID <= 0 {
@@ -1486,4 +1611,32 @@ func (s *instanceService) getDefaultPageSize() int {
 
 func (s *instanceService) getMaxPageSize() int {
 	return 100 // 最大分页大小
+}
+
+// ExportInstance 导出工单实例列表
+func (s *instanceService) ExportInstance(ctx context.Context, req *model.ExportWorkorderInstanceReq) ([]*model.WorkorderInstance, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 5000
+	}
+	if limit > 10000 {
+		limit = 10000
+	}
+	listReq := &model.ListWorkorderInstanceReq{
+		ListReq: model.ListReq{
+			Page:   1,
+			Size:   limit,
+			Search: req.Search,
+		},
+		Status:    req.Status,
+		Priority:  req.Priority,
+		ProcessID: req.ProcessID,
+		Scope:     req.Scope,
+		UserID:    req.UserID,
+	}
+	resp, err := s.ListInstance(ctx, listReq)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
 }

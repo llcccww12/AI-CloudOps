@@ -43,6 +43,7 @@ func InitGinServer(
 	authApiHdl *systemApi.ApiHandler,
 	authRoleHdl *systemApi.RoleHandler,
 	systemHdl *systemApi.SystemHandler,
+	departmentHdl *systemApi.DepartmentHandler,
 	notAuthHdl *notAuthHandler.NotAuthHandler,
 	k8sClusterHdl *k8sApi.K8sClusterHandler,
 	k8sDeploymentHdl *k8sApi.K8sDeploymentHandler,
@@ -97,6 +98,7 @@ func InitGinServer(
 	authApiHdl.RegisterRouters(server)
 	authRoleHdl.RegisterRouters(server)
 	systemHdl.RegisterRouters(server)
+	departmentHdl.RegisterRouters(server)
 	auditHdl.RegisterRouters(server)
 	notAuthHdl.RegisterRouters(server)
 	alertEventHdl.RegisterRouters(server)

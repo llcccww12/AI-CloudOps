@@ -208,10 +208,12 @@ func (h *RoleHandler) CheckUserPermission(ctx *gin.Context) {
 	var req model.CheckUserPermissionRequest
 
 	user := ctx.MustGet("user").(jwt.UserClaims)
-	req.UserID = user.Uid
-
 	base.HandleRequest(ctx, &req, func() (interface{}, error) {
-		return h.svc.CheckUserPermission(ctx.Request.Context(), req.UserID, req.Method, req.Path)
+		userID := req.UserID
+		if userID <= 0 {
+			userID = user.Uid
+		}
+		return h.svc.CheckUserPermission(ctx.Request.Context(), userID, req.Method, req.Path)
 	})
 }
 

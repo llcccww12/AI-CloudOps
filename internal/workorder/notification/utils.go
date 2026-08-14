@@ -85,18 +85,30 @@ func FormatPriorityIcon(priority int8) string {
 
 func GetEventTypeText(eventType string) string {
 	eventMap := map[string]string{
-		"created":   "工单创建",
-		"updated":   "工单更新",
-		"approved":  "工单审批通过",
-		"rejected":  "工单审批拒绝",
-		"completed": "工单完成",
-		"closed":    "工单关闭",
-		"cancelled": "工单取消",
-		"assigned":  "工单分配",
-		"commented": "工单评论",
-		"escalated": "工单升级",
-		"due_soon":  "工单即将到期",
-		"overdue":   "工单已逾期",
+		"created":            "工单创建",
+		"updated":            "工单更新",
+		"approved":           "工单审批通过",
+		"rejected":           "工单审批拒绝",
+		"completed":          "工单完成",
+		"closed":             "工单关闭",
+		"cancelled":          "工单取消",
+		"assigned":           "工单分配",
+		"commented":          "工单评论",
+		"escalated":          "工单升级",
+		"due_soon":           "工单即将到期",
+		"overdue":            "工单已逾期",
+		"instance_created":   "工单创建",
+		"instance_submitted": "工单提交",
+		"instance_assigned":  "工单指派",
+		"instance_approved":  "工单审批通过",
+		"instance_rejected":  "工单拒绝",
+		"instance_completed": "工单完成",
+		"instance_cancelled": "工单取消",
+		"instance_updated":   "工单更新",
+		"instance_commented": "工单评论",
+		"instance_deleted":   "工单删除",
+		"instance_returned":  "工单退回",
+		"test":               "通知测试",
 	}
 
 	if text, exists := eventMap[eventType]; exists {
@@ -190,11 +202,11 @@ func buildTemplateVariables(request *SendRequest) map[string]string {
 	variables["notification_day"] = currentTime.Format("02")
 
 	// ===== 企业信息变量 =====
-	variables["company_name"] = "AI-CloudOps"
+	variables["company_name"] = "CacOps"
 	variables["platform_name"] = "运维管理平台"
 	variables["department"] = "技术运维部"
 	variables["service_hotline"] = "400-000-0000"
-	variables["copyright"] = "Copyright © 2024 AI-CloudOps. All rights reserved."
+	variables["copyright"] = "Copyright © 2024 CacOps. All rights reserved."
 
 	// ===== 从Templates中获取业务变量 =====
 	if request.Templates != nil {

@@ -46,6 +46,7 @@ type AuditService interface {
 	DeleteAuditLog(ctx context.Context, id int) error
 	BatchDeleteAuditLogs(ctx context.Context, ids []int) error
 	ArchiveAuditLogs(ctx context.Context, req *model.ArchiveAuditLogsRequest) error
+	ExportAuditLogs(ctx context.Context, req *model.ExportAuditLogsRequest) ([]model.AuditLog, error)
 	Close() error
 }
 
@@ -251,6 +252,37 @@ func (s *auditService) ArchiveAuditLogs(ctx context.Context, req *model.ArchiveA
 		return fmt.Errorf("归档审计日志失败: %w", err)
 	}
 	return nil
+}
+
+// ExportAuditLogs 导出审计日志（允许更大批量）
+func (s *auditService) ExportAuditLogs(ctx context.Context, req *model.ExportAuditLogsRequest) ([]model.AuditLog, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 5000
+	}
+	if limit > 10000 {
+		limit = 10000
+	}
+
+	listReq := &model.ListAuditLogsRequest{
+		ListReq: model.ListReq{
+			Page:   1,
+			Size:   limit,
+			Search: req.Search,
+		},
+		OperationType: req.OperationType,
+		TargetType:    req.TargetType,
+		StatusCode:    req.StatusCode,
+		StartTime:     req.StartTime,
+		EndTime:       req.EndTime,
+	}
+
+	_, logs, err := s.dao.ListAuditLogs(ctx, listReq)
+	if err != nil {
+		s.logger.Error("导出审计日志失败", zap.Error(err), zap.Any("request", req))
+		return nil, fmt.Errorf("导出审计日志失败: %w", err)
+	}
+	return logs, nil
 }
 
 // 关闭服务

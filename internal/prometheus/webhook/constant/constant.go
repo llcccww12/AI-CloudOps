@@ -173,8 +173,25 @@ var (
       "tag": "hr"
     },
     {
-      "tag": "markdown",
-      "content": "%s"
+      "tag": "div",
+      "text": {
+        "tag": "lark_md",
+        "content": "🛠️ AIOps 联动（仅打开工作流，不会自动改集群）"
+      }
+    },
+    {
+      "tag": "action",
+      "actions": [
+        {
+          "tag": "button",
+          "text": {
+            "tag": "plain_text",
+            "content": "打开 AutoFix"
+          },
+          "type": "primary",
+          "url": "%s"
+        }
+      ]
     },
     {
       "tag": "hr"
@@ -367,6 +384,7 @@ const (
 	RenderingURLTemplate = "http://%s/%s?fingerprint=%v"         // 渲染 URL 模板
 	SilenceURLTemplate   = "http://%s/%s?fingerprint=%v&hour=%v" // 静音 URL 模板
 	UnsilenceURLTemplate = "http://%s/%s?fingerprint=%v"         // 取消静音 URL 模板
+	AutoFixURLTemplate   = "http://%s/autofix/workflow?%s"       // AutoFix 深链（人工确认）
 
 	// DefaultUpgradeMinutes 默认告警升级时间（分钟）
 	DefaultUpgradeMinutes = 30 // 默认告警升级时间为30分钟

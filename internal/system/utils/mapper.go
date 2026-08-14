@@ -39,6 +39,7 @@ func BuildUserForCreate(req *model.UserSignUpReq, hashedPassword string) *model.
 		AccountType:  req.AccountType,
 		HomePath:     req.HomePath,
 		Enable:       req.Enable,
+		DepartmentID: req.DepartmentID,
 	}
 }
 
@@ -53,4 +54,5 @@ func ApplyProfileUpdates(user *model.User, req *model.UpdateProfileReq) {
 	user.Enable = req.Enable
 	user.Email = req.Email
 	user.Avatar = req.Avatar
+	user.DepartmentID = req.DepartmentID
 }

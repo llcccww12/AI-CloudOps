@@ -29,6 +29,7 @@ import (
 	"fmt"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/config"
+	workorderDao "github.com/GoSimplicity/AI-CloudOps/internal/workorder/dao"
 	"github.com/GoSimplicity/AI-CloudOps/internal/workorder/notification"
 	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
@@ -63,10 +64,11 @@ func InitNotificationConfig(cfg *config.Config) (notification.NotificationConfig
 	}, nil
 }
 
-func InitNotificationManager(config notification.NotificationConfig, asynqClient *asynq.Client, logger *zap.Logger) (*notification.Manager, error) {
+func InitNotificationManager(config notification.NotificationConfig, asynqClient *asynq.Client, logger *zap.Logger, inboxDAO workorderDao.WorkorderInboxDAO) (*notification.Manager, error) {
 	manager, err := notification.NewManager(config, asynqClient, logger)
 	if err != nil {
 		return nil, fmt.Errorf("初始化通知管理器失败: %w", err)
 	}
+	manager.RegisterChannel(notification.NewInboxChannel(inboxDAO, logger))
 	return manager, nil
 }

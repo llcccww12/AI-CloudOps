@@ -355,7 +355,7 @@ func (f *FeishuChannel) buildGroupMessage(request *SendRequest) map[string]inter
 	priorityIcon, priorityText, _, templateColor := f.getPriorityConfig(int(request.Priority))
 	eventText := GetEventTypeText(request.EventType)
 
-	headerTitle := fmt.Sprintf("⚡ AI-CloudOps | %s", eventText)
+	headerTitle := fmt.Sprintf("⚡ CacOps | %s", eventText)
 
 	workorderNumber := "系统通知"
 	if request.InstanceID != nil {
@@ -406,7 +406,7 @@ func (f *FeishuChannel) buildGroupMessage(request *SendRequest) map[string]inter
 			"elements": []map[string]interface{}{
 				{
 					"tag":     "plain_text",
-					"content": "AI-CloudOps 运维管理平台发送 | 技术支持：400-000-0000",
+					"content": "CacOps 运维管理平台发送 | 技术支持：400-000-0000",
 				},
 			},
 		},
@@ -467,7 +467,7 @@ func (f *FeishuChannel) buildPrivateMessageContent(request *SendRequest, recipie
 	priorityIcon, priorityText, _, templateColor := f.getPriorityConfig(int(request.Priority))
 	eventText := GetEventTypeText(request.EventType)
 
-	headerTitle := fmt.Sprintf("⚡ AI-CloudOps | %s", eventText)
+	headerTitle := fmt.Sprintf("⚡ CacOps | %s", eventText)
 
 	workorderNumber := "系统通知"
 	if request.InstanceID != nil {
@@ -518,7 +518,7 @@ func (f *FeishuChannel) buildPrivateMessageContent(request *SendRequest, recipie
 			"elements": []map[string]interface{}{
 				{
 					"tag":     "plain_text",
-					"content": "AI-CloudOps 运维管理平台发送 | 技术支持：400-000-0000",
+					"content": "CacOps 运维管理平台发送 | 技术支持：400-000-0000",
 				},
 			},
 		},

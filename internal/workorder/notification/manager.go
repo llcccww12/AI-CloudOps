@@ -119,6 +119,16 @@ func NewManager(config NotificationConfig, queueClient *asynq.Client, logger *za
 	return manager, nil
 }
 
+func (m *Manager) RegisterChannel(channel NotificationChannel) {
+	if channel == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.channels[channel.GetName()] = channel
+	m.logger.Info("通知渠道已注册", zap.String("channel", channel.GetName()))
+}
+
 // SendNotification 同步发送通知消息
 func (m *Manager) SendNotification(ctx context.Context, request *SendRequest) (*SendResponse, error) {
 	// 生成ID
@@ -344,6 +354,8 @@ func (m *Manager) getChannel(recipientType string) (NotificationChannel, error) 
 		channelName = model.NotificationChannelEmail
 	case "feishu", "feishu_user", "feishu_group":
 		channelName = model.NotificationChannelFeishu
+	case "inbox":
+		channelName = model.NotificationChannelInbox
 	default:
 		// 从地址推断
 		channelName = m.inferChannelFromAddress(recipientType)

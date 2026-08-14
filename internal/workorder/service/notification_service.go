@@ -56,6 +56,12 @@ type WorkorderNotificationService interface {
 	ProcessDueReminders(ctx context.Context) error
 	AcknowledgeByUser(ctx context.Context, instanceID, userID int) error
 	StopRemindersByInstance(ctx context.Context, instanceID int) error
+	DuplicateNotification(ctx context.Context, id int, operatorID int) error
+	ListInbox(ctx context.Context, req *model.ListWorkorderInboxReq) (*model.ListResp[*model.WorkorderInboxMessage], error)
+	CountUnreadInbox(ctx context.Context, userID int) (*model.WorkorderInboxUnreadCount, error)
+	MarkInboxRead(ctx context.Context, id int, userID int) error
+	MarkAllInboxRead(ctx context.Context, userID int) error
+	ClearInbox(ctx context.Context, userID int) error
 }
 
 type workorderNotificationService struct {
@@ -65,6 +71,8 @@ type workorderNotificationService struct {
 	notificationMgr *notification.Manager
 	instanceDAO     workorderDao.WorkorderInstanceDAO
 	userDAO         userDao.UserDAO
+	roleDAO         userDao.RoleDAO
+	inboxDAO        workorderDao.WorkorderInboxDAO
 }
 
 func NewWorkorderNotificationService(
@@ -74,6 +82,8 @@ func NewWorkorderNotificationService(
 	logger *zap.Logger,
 	instanceDAO workorderDao.WorkorderInstanceDAO,
 	userDAO userDao.UserDAO,
+	roleDAO userDao.RoleDAO,
+	inboxDAO workorderDao.WorkorderInboxDAO,
 ) WorkorderNotificationService {
 	return &workorderNotificationService{
 		logger:          logger,
@@ -82,10 +92,51 @@ func NewWorkorderNotificationService(
 		notificationMgr: notificationMgr,
 		instanceDAO:     instanceDAO,
 		userDAO:         userDAO,
+		roleDAO:         roleDAO,
+		inboxDAO:        inboxDAO,
 	}
 }
 
 func (s *workorderNotificationService) CreateNotification(ctx context.Context, req *model.CreateWorkorderNotificationReq) error {
+	req.Channels = model.StringList(withInboxChannel(req.Channels))
+	return s.dao.CreateNotification(ctx, req)
+}
+
+func (s *workorderNotificationService) DuplicateNotification(ctx context.Context, id int, operatorID int) error {
+	src, err := s.dao.GetNotificationByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("通知配置不存在")
+		}
+		return fmt.Errorf("查询通知配置失败: %w", err)
+	}
+
+	req := &model.CreateWorkorderNotificationReq{
+		Name:             src.Name + " (副本)",
+		Description:      src.Description,
+		ProcessID:        src.ProcessID,
+		TemplateID:       src.TemplateID,
+		CategoryID:       src.CategoryID,
+		EventTypes:       src.EventTypes,
+		TriggerType:      src.TriggerType,
+		TriggerCondition: src.TriggerCondition,
+		Channels:         model.StringList(withInboxChannel(src.Channels)),
+		RecipientTypes:   src.RecipientTypes,
+		RecipientUsers:   src.RecipientUsers,
+		RecipientRoles:   src.RecipientRoles,
+		RecipientDepts:   src.RecipientDepts,
+		MessageTemplate:  src.MessageTemplate,
+		SubjectTemplate:  src.SubjectTemplate,
+		ScheduledTime:    src.ScheduledTime,
+		RepeatInterval:   src.RepeatInterval,
+		MaxRetries:       src.MaxRetries,
+		RetryInterval:    src.RetryInterval,
+		Status:           model.NotificationStatusDisabled,
+		Priority:         src.Priority,
+		IsDefault:        model.IsDefaultNo,
+		Settings:         src.Settings,
+		UserID:           operatorID,
+	}
 	return s.dao.CreateNotification(ctx, req)
 }
 
@@ -98,6 +149,9 @@ func (s *workorderNotificationService) UpdateNotification(ctx context.Context, r
 		return fmt.Errorf("查询通知配置失败: %w", err)
 	}
 
+	if len(req.Channels) > 0 {
+		req.Channels = model.StringList(withInboxChannel(req.Channels))
+	}
 	return s.dao.UpdateNotification(ctx, req)
 }
 
@@ -161,7 +215,7 @@ func (s *workorderNotificationService) TestSendNotification(ctx context.Context,
 			if req.Recipient != "" {
 				recipientAddrs = []testRecipient{{ID: "manual", Name: "手动指定", Addr: req.Recipient}}
 			} else {
-				return fmt.Errorf("没有可发送的接收人：请在通知配置中选择有邮箱的自定义用户，或给创建人账号补全邮箱")
+				return fmt.Errorf("没有可发送的接收人：请配置创建人/处理人/指定用户；邮件和飞书还需补全对应账号")
 			}
 		}
 
@@ -199,7 +253,7 @@ func (s *workorderNotificationService) TestSendNotification(ctx context.Context,
 			sendRequest.Templates["updated_time"] = time.Now().Format("2006-01-02 15:04:05")
 			sendRequest.Templates["event_type"] = notification.GetEventTypeText("test")
 			sendRequest.Templates["notification_time"] = time.Now().Format("2006-01-02 15:04:05")
-			sendRequest.Templates["company_name"] = "AI-CloudOps"
+			sendRequest.Templates["company_name"] = "CacOps"
 			sendRequest.Templates["platform_name"] = "运维管理平台"
 			sendRequest.Templates["department"] = "技术运维部"
 			sendRequest.Templates["test_content"] = "本次测试验证了系统通知功能的完整性，包括邮件发送、飞书消息推送等多个渠道的有效性。"
@@ -276,6 +330,8 @@ func (s *workorderNotificationService) resolveTestRecipients(
 			addr = user.Email
 		case model.NotificationChannelFeishu:
 			addr = user.FeiShuUserId
+		case model.NotificationChannelInbox:
+			addr = key
 		case model.NotificationChannelSMS:
 			addr = user.Mobile
 		}
@@ -347,10 +403,10 @@ func (s *workorderNotificationService) SendWorkorderNotification(ctx context.Con
 	}
 
 	if len(notifications) == 0 {
-		s.logger.Info("没有找到匹配的通知配置",
+		s.logger.Info("没有找到匹配的通知配置，仍向相关人发送站内信",
 			zap.String("event_type", eventType),
 			zap.Int("process_id", instance.ProcessID))
-		return nil
+		return s.sendInvolvedInbox(ctx, instance, eventType, senderID, customContent...)
 	}
 
 	for _, notification := range notifications {
@@ -379,7 +435,10 @@ func (s *workorderNotificationService) processNotification(ctx context.Context, 
 		return fmt.Errorf("获取接收人失败: %w", err)
 	}
 
-	if len(recipients) == 0 {
+	channels := withInboxChannel(notification.Channels)
+	inboxRecipients := mergeWorkorderInvolvedRecipients(recipients, instance, senderID)
+
+	if len(recipients) == 0 && len(inboxRecipients) == 0 {
 		s.logger.Info("没有找到接收人",
 			zap.Int("notification_id", notification.ID),
 			zap.Int("instance_id", instance.ID))
@@ -387,9 +446,9 @@ func (s *workorderNotificationService) processNotification(ctx context.Context, 
 	}
 
 	var wg sync.WaitGroup
-	channelErrors := make(chan error, len(notification.Channels))
+	channelErrors := make(chan error, len(channels))
 
-	for _, channel := range notification.Channels {
+	for _, channel := range channels {
 		wg.Add(1)
 		go func(ch string) {
 			defer wg.Done()
@@ -401,7 +460,15 @@ func (s *workorderNotificationService) processNotification(ctx context.Context, 
 				defer cancel()
 			}
 
-			if err := s.sendChannelNotification(channelCtx, notification, instance, ch, recipients, eventType, senderID, customContent...); err != nil {
+			target := recipients
+			if ch == model.NotificationChannelInbox {
+				target = inboxRecipients
+			}
+			if len(target) == 0 {
+				return
+			}
+
+			if err := s.sendChannelNotification(channelCtx, notification, instance, ch, target, eventType, senderID, customContent...); err != nil {
 				s.logger.Error("发送渠道通知失败",
 					zap.String("channel", ch),
 					zap.Int("notification_id", notification.ID),
@@ -588,7 +655,7 @@ func (s *workorderNotificationService) processOneReminder(ctx context.Context, r
 
 	customContent := fmt.Sprintf("【未读催发 %d/%d】请及时打开工单查看", reminder.SentCount+1, reminder.MaxSend)
 	var sendErrs []string
-	for _, channel := range notification.Channels {
+	for _, channel := range withInboxChannel(notification.Channels) {
 		if err := s.sendChannelNotification(ctx, notification, instance, channel, recipients, reminder.EventType, 0, customContent); err != nil {
 			sendErrs = append(sendErrs, err.Error())
 		}
@@ -662,11 +729,66 @@ func (s *workorderNotificationService) getRecipients(ctx context.Context, notifi
 				})
 			}
 		case model.RecipientTypeRole:
-			s.logger.Info("角色用户通知暂未实现",
-				zap.Strings("roles", notification.RecipientRoles))
+			seen := make(map[int]struct{})
+			for _, roleIDStr := range notification.RecipientRoles {
+				roleID, err := strconv.Atoi(roleIDStr)
+				if err != nil {
+					s.logger.Warn("无效的角色ID", zap.String("role_id", roleIDStr))
+					continue
+				}
+				users, err := s.roleDAO.GetUsers(ctx, roleID)
+				if err != nil {
+					s.logger.Warn("获取角色用户失败", zap.Int("role_id", roleID), zap.Error(err))
+					continue
+				}
+				for _, user := range users {
+					if user == nil {
+						continue
+					}
+					if _, ok := seen[user.ID]; ok {
+						continue
+					}
+					seen[user.ID] = struct{}{}
+					name := user.RealName
+					if name == "" {
+						name = user.Username
+					}
+					recipients = append(recipients, RecipientInfo{
+						ID:   strconv.Itoa(user.ID),
+						Name: name,
+						Type: recipientType,
+					})
+				}
+			}
 		case model.RecipientTypeDept:
-			s.logger.Info("部门用户通知暂未实现",
-				zap.Strings("depts", notification.RecipientDepts))
+			deptIDs := make([]int, 0, len(notification.RecipientDepts))
+			for _, deptIDStr := range notification.RecipientDepts {
+				deptID, err := strconv.Atoi(deptIDStr)
+				if err != nil {
+					s.logger.Warn("无效的部门ID", zap.String("dept_id", deptIDStr))
+					continue
+				}
+				deptIDs = append(deptIDs, deptID)
+			}
+			users, err := s.userDAO.ListByDepartmentIDs(ctx, deptIDs)
+			if err != nil {
+				s.logger.Warn("获取部门用户失败", zap.Error(err))
+				break
+			}
+			for _, user := range users {
+				if user == nil {
+					continue
+				}
+				name := user.RealName
+				if name == "" {
+					name = user.Username
+				}
+				recipients = append(recipients, RecipientInfo{
+					ID:   strconv.Itoa(user.ID),
+					Name: name,
+					Type: recipientType,
+				})
+			}
 		case model.RecipientTypeCustom:
 			// 与指定用户相同：使用 recipient_users
 			for _, userIDStr := range notification.RecipientUsers {
@@ -825,7 +947,7 @@ func (s *workorderNotificationService) buildMessageContent(notificationConfig *m
 	sendRequest.Templates["event_type"] = notification.GetEventTypeText(eventType)
 	sendRequest.Templates["event_type_text"] = notification.GetEventTypeText(eventType)
 	sendRequest.Templates["notification_time"] = time.Now().Format("2006-01-02 15:04:05")
-	sendRequest.Templates["company_name"] = "AI-CloudOps"
+	sendRequest.Templates["company_name"] = "CacOps"
 	sendRequest.Templates["platform_name"] = "运维管理平台"
 	sendRequest.Templates["department"] = "技术运维部"
 
@@ -854,7 +976,7 @@ func (s *workorderNotificationService) buildMessageContent(notificationConfig *m
 	// 渲染主题
 	subject := notificationConfig.SubjectTemplate
 	if subject == "" {
-		subject = fmt.Sprintf("【AI-CloudOps】工单通知 - %s", instance.Title)
+		subject = fmt.Sprintf("【CacOps】工单通知 - %s", instance.Title)
 	} else {
 		renderedSubject, _ := notification.RenderTemplate(subject, sendRequest)
 		subject = renderedSubject
@@ -864,7 +986,7 @@ func (s *workorderNotificationService) buildMessageContent(notificationConfig *m
 	if content == "" {
 		content = fmt.Sprintf(`尊敬的用户，您好！
 
-您收到一条来自AI-CloudOps运维管理平台的工单通知：
+您收到一条来自CacOps运维管理平台的工单通知：
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 工单基本信息
@@ -887,10 +1009,10 @@ func (s *workorderNotificationService) buildMessageContent(notificationConfig *m
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-此消息由AI-CloudOps运维管理平台发送，请及时处理相关工单。
+此消息由CacOps运维管理平台发送，请及时处理相关工单。
 如有疑问，请联系技术运维部门。
 
-AI-CloudOps 技术运维部
+CacOps 技术运维部
 发送时间：%s`,
 			instance.SerialNumber,
 			instance.Title,
@@ -950,6 +1072,8 @@ func (s *workorderNotificationService) getRecipientAddress(recipient RecipientIn
 			return ""
 		}
 		return user.FeiShuUserId
+	case model.NotificationChannelInbox:
+		return strconv.Itoa(userID)
 	case model.NotificationChannelSMS:
 		if user.Mobile == "" {
 			s.logger.Warn("用户没有配置手机号",
@@ -976,6 +1100,8 @@ func (s *workorderNotificationService) getRecipientTypeForChannel(channel string
 		return "email"
 	case model.NotificationChannelFeishu:
 		return "feishu_user"
+	case model.NotificationChannelInbox:
+		return "inbox"
 	case model.NotificationChannelSMS:
 		return "sms"
 	case model.NotificationChannelWebhook:
@@ -1016,14 +1142,15 @@ func (s *workorderNotificationService) SendNotificationByChannels(ctx context.Co
 
 // GetAvailableChannels 获取当前可用的通知渠道列表
 func (s *workorderNotificationService) GetAvailableChannels() *model.ListResp[*model.WorkorderNotificationChannel] {
-	if s.notificationMgr == nil {
-		return &model.ListResp[*model.WorkorderNotificationChannel]{
-			Items: []*model.WorkorderNotificationChannel{},
-			Total: 0,
+	availableChannels := []string{model.NotificationChannelInbox}
+	if s.notificationMgr != nil {
+		for _, channel := range s.notificationMgr.GetAvailableChannels() {
+			if channel == model.NotificationChannelInbox {
+				continue
+			}
+			availableChannels = append(availableChannels, channel)
 		}
 	}
-
-	availableChannels := s.notificationMgr.GetAvailableChannels()
 	channels := make([]*model.WorkorderNotificationChannel, 0, len(availableChannels))
 
 	for _, channel := range availableChannels {
@@ -1036,6 +1163,45 @@ func (s *workorderNotificationService) GetAvailableChannels() *model.ListResp[*m
 		Items: channels,
 		Total: int64(len(channels)),
 	}
+}
+
+func (s *workorderNotificationService) ListInbox(ctx context.Context, req *model.ListWorkorderInboxReq) (*model.ListResp[*model.WorkorderInboxMessage], error) {
+	if s.inboxDAO == nil {
+		return &model.ListResp[*model.WorkorderInboxMessage]{Items: []*model.WorkorderInboxMessage{}}, nil
+	}
+	return s.inboxDAO.ListByUser(ctx, req)
+}
+
+func (s *workorderNotificationService) CountUnreadInbox(ctx context.Context, userID int) (*model.WorkorderInboxUnreadCount, error) {
+	if s.inboxDAO == nil {
+		return &model.WorkorderInboxUnreadCount{Count: 0}, nil
+	}
+	count, err := s.inboxDAO.CountUnread(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.WorkorderInboxUnreadCount{Count: count}, nil
+}
+
+func (s *workorderNotificationService) MarkInboxRead(ctx context.Context, id int, userID int) error {
+	if s.inboxDAO == nil {
+		return nil
+	}
+	return s.inboxDAO.MarkRead(ctx, id, userID)
+}
+
+func (s *workorderNotificationService) MarkAllInboxRead(ctx context.Context, userID int) error {
+	if s.inboxDAO == nil {
+		return nil
+	}
+	return s.inboxDAO.MarkAllRead(ctx, userID)
+}
+
+func (s *workorderNotificationService) ClearInbox(ctx context.Context, userID int) error {
+	if s.inboxDAO == nil {
+		return nil
+	}
+	return s.inboxDAO.ClearByUser(ctx, userID)
 }
 
 type RecipientInfo struct {

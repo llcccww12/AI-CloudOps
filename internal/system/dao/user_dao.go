@@ -41,6 +41,7 @@ type UserDAO interface {
 	List(ctx context.Context, page, size int, search string, enable *int8, accountType *int8) ([]*model.User, int64, error)
 	GetByID(ctx context.Context, id int) (*model.User, error)
 	GetByIDs(ctx context.Context, ids []int) ([]*model.User, error)
+	ListByDepartmentIDs(ctx context.Context, departmentIDs []int) ([]*model.User, error)
 	GetPermCodes(ctx context.Context, uid int) ([]string, error)
 	ChangePassword(ctx context.Context, uid int, password string) error
 	WriteOff(ctx context.Context, uid int) error
@@ -365,6 +366,20 @@ func (d *userDAO) GetByIDs(ctx context.Context, ids []int) ([]*model.User, error
 		return nil, err
 	}
 
+	return users, nil
+}
+
+func (d *userDAO) ListByDepartmentIDs(ctx context.Context, departmentIDs []int) ([]*model.User, error) {
+	if len(departmentIDs) == 0 {
+		return []*model.User{}, nil
+	}
+	var users []*model.User
+	if err := d.db.WithContext(ctx).
+		Where("department_id IN ?", departmentIDs).
+		Find(&users).Error; err != nil {
+		d.l.Error("按部门查询用户失败", zap.Ints("department_ids", departmentIDs), zap.Error(err))
+		return nil, err
+	}
 	return users, nil
 }
 

@@ -40,6 +40,7 @@ type User struct {
 	AccountType  int8   `json:"account_type" gorm:"default:1;comment:账号类型 1普通用户 2服务账号" binding:"omitempty,oneof=1 2"` // 账号类型，使用int8节省空间
 	HomePath     string `json:"home_path" gorm:"type:varchar(255);default:'/';comment:登录后的默认首页"`                      // 登录后的默认首页，添加默认值
 	Enable       int8   `json:"enable" gorm:"default:1;comment:用户状态 1正常 2冻结" binding:"omitempty,oneof=1 2"`           // 用户状态，使用int8节省空间
+	DepartmentID int    `json:"department_id" gorm:"column:department_id;index;default:0;comment:所属部门ID"`             // 所属部门ID，0表示未分配
 	Apis         []*Api `json:"apis" gorm:"many2many:cl_user_apis;comment:关联接口"`                                      // 多对多关联接口
 }
 
@@ -69,6 +70,7 @@ type UserSignUpReq struct {
 	AccountType  int8   `json:"account_type" binding:"required,oneof=1 2"`        // 账号类型 1普通用户 2服务账号
 	HomePath     string `json:"home_path" binding:"omitempty" default:"/"`        // 默认首页
 	Enable       int8   `json:"enable" binding:"omitempty,oneof=1 2" default:"1"` // 用户状态 1正常 2冻结
+	DepartmentID int    `json:"department_id"`                                    // 所属部门ID，0表示未分配
 }
 
 type TokenRequest struct {
@@ -116,6 +118,7 @@ type UpdateProfileReq struct {
 	AccountType  int8   `json:"account_type" binding:"required,oneof=1 2"`        // 账号类型
 	HomePath     string `json:"home_path" binding:"required"`                     // 默认首页
 	Enable       int8   `json:"enable" binding:"omitempty,oneof=1 2" default:"1"` // 用户状态
+	DepartmentID int    `json:"department_id"`                                    // 所属部门ID，0表示未分配
 }
 
 type DeleteUserReq struct {

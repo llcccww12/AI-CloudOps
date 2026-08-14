@@ -206,7 +206,17 @@ func (d *workorderInstanceDAO) ListInstance(ctx context.Context, req *model.List
 		return nil, 0, fmt.Errorf("请求参数为空")
 	}
 
-	req.Page, req.Size = ValidatePagination(req.Page, req.Size)
+	page, size := req.Page, req.Size
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	if size > 10000 {
+		size = 10000
+	}
+	req.Page, req.Size = page, size
 
 	db := d.db.WithContext(ctx).Model(&model.WorkorderInstance{})
 
@@ -223,20 +233,46 @@ func (d *workorderInstanceDAO) ListInstance(ctx context.Context, req *model.List
 		db = db.Where("process_id = ?", *req.ProcessID)
 	}
 
+	openStatus := []int{
+		int(model.InstanceStatusPending),
+		int(model.InstanceStatusProcessing),
+	}
+	archivedStatus := []int{
+		int(model.InstanceStatusCompleted),
+		int(model.InstanceStatusRejected),
+		int(model.InstanceStatusCancelled),
+	}
+
+	switch req.Scope {
+	case model.InstanceListScopeMine:
+		if req.UserID > 0 {
+			db = db.Where("operator_id = ?", req.UserID)
+		}
+	case model.InstanceListScopeTodo:
+		if req.UserID > 0 {
+			db = db.Where("status IN ?", openStatus).Where("assignee_id = ?", req.UserID)
+		}
+	case model.InstanceListScopeArchive:
+		db = db.Where("status IN ?", archivedStatus)
+	case model.InstanceListScopeAll:
+		db = db.Where("status IN ?", openStatus)
+	}
+
 	if req.Search != "" {
 		search := sanitizeSearchInput(req.Search)
 		db = db.Where("title LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
-	if err := db.Count(&total).Error; err != nil {
+	countDB := db.Session(&gorm.Session{})
+	if err := countDB.Count(&total).Error; err != nil {
 		d.logger.Error("获取工单实例总数失败", zap.Error(err))
 		return nil, 0, fmt.Errorf("获取工单实例总数失败: %w", err)
 	}
 
-	offset := (req.Page - 1) * req.Size
+	offset := (page - 1) * size
 	err := db.Order("created_at DESC").
 		Offset(offset).
-		Limit(req.Size).
+		Limit(size).
 		Find(&instances).Error
 	if err != nil {
 		d.logger.Error("获取工单实例列表失败", zap.Error(err))
@@ -364,11 +400,16 @@ func (d *workorderInstanceDAO) UpdateInstanceAssignee(ctx context.Context, id in
 		return ErrInstanceInvalidID
 	}
 
+	var value any
+	if assigneeID != nil && *assigneeID > 0 {
+		value = *assigneeID
+	}
+
 	result := d.db.WithContext(ctx).
 		Model(&model.WorkorderInstance{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"assignee_id": assigneeID,
+			"assignee_id": value,
 		})
 
 	if result.Error != nil {

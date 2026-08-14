@@ -53,6 +53,7 @@ const (
 const (
 	NotificationChannelEmail   = "email"   // 邮件通知
 	NotificationChannelFeishu  = "feishu"  // 飞书通知
+	NotificationChannelInbox   = "inbox"   // 站内信
 	NotificationChannelSMS     = "sms"     // 短信通知
 	NotificationChannelWebhook = "webhook" // Webhook通知
 )

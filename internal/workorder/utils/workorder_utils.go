@@ -66,6 +66,10 @@ func GetEventTypeName(eventType string) string {
 		return "工单更新"
 	case model.EventTypeInstanceCommented:
 		return "工单评论"
+	case model.EventTypeInstanceDeleted:
+		return "工单删除"
+	case model.EventTypeInstanceReturned:
+		return "工单退回"
 	default:
 		return "未知事件"
 	}
@@ -77,6 +81,8 @@ func GetNotificationChannelName(channel string) string {
 		return "邮件"
 	case model.NotificationChannelFeishu:
 		return "飞书"
+	case model.NotificationChannelInbox:
+		return "站内信"
 	case model.NotificationChannelSMS:
 		return "短信"
 	case model.NotificationChannelWebhook:

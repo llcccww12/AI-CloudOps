@@ -46,6 +46,7 @@ func InitTables(db *gorm.DB) error {
 		&model.Role{},
 		&model.RoleApi{},
 		&model.UserRole{},
+		&model.Department{},
 
 		// tree
 		&model.TreeNode{},
@@ -82,6 +83,7 @@ func InitTables(db *gorm.DB) error {
 		&model.WorkorderNotification{},
 		&model.WorkorderNotificationLog{},
 		&model.WorkorderNotificationReminder{},
+		&model.WorkorderInboxMessage{},
 		&model.WorkorderInstanceTimeline{},
 
 		&model.CronJob{},
