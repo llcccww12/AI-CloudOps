@@ -77,6 +77,7 @@ func InitTables(db *gorm.DB) error {
 		&model.WorkorderInstance{},
 		&model.WorkorderInstanceFlow{},
 		&model.WorkorderInstanceComment{},
+		&model.WorkorderInstanceCommentAttachment{},
 		&model.WorkorderProcess{},
 		&model.WorkorderTemplate{},
 		&model.WorkorderCategory{},

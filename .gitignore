@@ -120,3 +120,5 @@ internal/model/kubeedge_types.go
 # AI-CloudOps executable
 AI-CloudOps
 .cursor
+# workorder local attachments
+data/workorder/

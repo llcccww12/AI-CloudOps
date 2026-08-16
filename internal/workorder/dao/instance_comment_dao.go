@@ -87,6 +87,7 @@ func (d *workorderInstanceCommentDAO) GetInstanceComments(ctx context.Context, i
 
 	var comments []*model.WorkorderInstanceComment
 	err := d.db.WithContext(ctx).
+		Preload("Attachments").
 		Where("instance_id = ? AND status = ?", instanceID, model.CommentStatusNormal).
 		Order("created_at ASC").
 		Find(&comments).Error
@@ -151,6 +152,7 @@ func (d *workorderInstanceCommentDAO) GetInstanceCommentByID(ctx context.Context
 
 	var comment model.WorkorderInstanceComment
 	err := d.db.WithContext(ctx).
+		Preload("Attachments").
 		Where("id = ?", id).
 		First(&comment).Error
 
@@ -193,7 +195,8 @@ func (d *workorderInstanceCommentDAO) ListInstanceComments(ctx context.Context, 
 	}
 
 	offset := (req.Page - 1) * req.Size
-	err := db.Order("created_at DESC").
+	err := db.Preload("Attachments").
+		Order("created_at DESC").
 		Offset(offset).
 		Limit(req.Size).
 		Find(&comments).Error
@@ -221,9 +224,6 @@ func (d *workorderInstanceCommentDAO) validateComment(comment *model.WorkorderIn
 	}
 	if comment.OperatorID <= 0 {
 		return fmt.Errorf("用户ID无效")
-	}
-	if comment.Content == "" {
-		return fmt.Errorf("评论内容不能为空")
 	}
 	return nil
 }

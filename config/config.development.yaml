@@ -27,6 +27,10 @@ prometheus:
   httpSdAPI: "http://localhost:8888/api/not_auth/getTreeNodeBindIps"
 mock:
   enabled: true # 是否开启mock
+workorder:
+  attachment_dir: "./data/workorder/attachments"
+  attachment_max_size_mb: 10
+  attachment_max_count: 5
 notification:
   # 邮箱配置
   email:

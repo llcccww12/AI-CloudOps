@@ -26,6 +26,10 @@
 package api
 
 import (
+	"fmt"
+	"net/url"
+	"strconv"
+
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/workorder/service"
 	"github.com/GoSimplicity/AI-CloudOps/pkg/base"
@@ -52,6 +56,9 @@ func (h *InstanceCommentHandler) RegisterRouters(server *gin.Engine) {
 		commentGroup.GET("/detail/:id", h.GetInstanceComment)
 		commentGroup.GET("/list", h.ListInstanceComments)
 		commentGroup.GET("/tree/:id", h.GetInstanceCommentsTree)
+		commentGroup.POST("/attachment/upload", h.UploadCommentAttachment)
+		commentGroup.GET("/attachment/:id/download", h.DownloadCommentAttachment)
+		commentGroup.DELETE("/attachment/:id", h.DeleteCommentAttachment)
 	}
 }
 
@@ -59,7 +66,6 @@ func (h *InstanceCommentHandler) CreateInstanceComment(ctx *gin.Context) {
 	var req model.CreateWorkorderInstanceCommentReq
 	user := ctx.MustGet("user").(jwt.UserClaims)
 
-	// 先写入操作人：JSON 缺失字段会保留，满足 binding required
 	req.OperatorID = user.Uid
 	req.OperatorName = user.Username
 
@@ -139,5 +145,57 @@ func (h *InstanceCommentHandler) GetInstanceCommentsTree(ctx *gin.Context) {
 
 	base.HandleRequest(ctx, &req, func() (any, error) {
 		return h.commentService.GetInstanceCommentsTree(ctx.Request.Context(), req.ID)
+	})
+}
+
+func (h *InstanceCommentHandler) UploadCommentAttachment(ctx *gin.Context) {
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	instanceID, err := strconv.Atoi(ctx.PostForm("instance_id"))
+	if err != nil || instanceID <= 0 {
+		base.ErrorWithMessage(ctx, "instance_id 无效")
+		return
+	}
+	fileHeader, err := ctx.FormFile("file")
+	if err != nil {
+		base.ErrorWithMessage(ctx, "请上传文件")
+		return
+	}
+
+	attachment, err := h.commentService.UploadCommentAttachment(ctx.Request.Context(), instanceID, user.Uid, fileHeader)
+	if err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+	base.SuccessWithData(ctx, attachment)
+}
+
+func (h *InstanceCommentHandler) DownloadCommentAttachment(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+
+	attachment, absPath, err := h.commentService.DownloadCommentAttachment(ctx.Request.Context(), id)
+	if err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+
+	disposition := fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(attachment.FileName))
+	ctx.Header("Content-Disposition", disposition)
+	if attachment.ContentType != "" {
+		ctx.Header("Content-Type", attachment.ContentType)
+	}
+	ctx.File(absPath)
+}
+
+func (h *InstanceCommentHandler) DeleteCommentAttachment(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	user := ctx.MustGet("user").(jwt.UserClaims)
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return nil, h.commentService.DeleteCommentAttachment(ctx.Request.Context(), id, user.Uid)
 	})
 }

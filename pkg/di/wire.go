@@ -207,6 +207,7 @@ var DaoSet = wire.NewSet(
 	workorderDao.NewProcessDAO,
 	workorderDao.NewWorkorderCategoryDAO,
 	workorderDao.NewWorkorderInstanceCommentDAO,
+	workorderDao.NewWorkorderCommentAttachmentDAO,
 	workorderDao.NewInstanceFlowDAO,
 	workorderDao.NewInstanceTimeLineDAO,
 	workorderDao.NewNotificationDAO,

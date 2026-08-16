@@ -193,6 +193,7 @@ func ProvideApp(cfg *config.Config) (*app.App, error) {
 	workorderInstanceFlowDAO := dao4.NewInstanceFlowDAO(db, logger)
 	workorderInstanceTimelineDAO := dao4.NewInstanceTimeLineDAO(db, logger)
 	workorderInstanceCommentDAO := dao4.NewWorkorderInstanceCommentDAO(db, logger)
+	workorderCommentAttachmentDAO := dao4.NewWorkorderCommentAttachmentDAO(db, logger)
 	workorderNotificationDAO := dao4.NewNotificationDAO(db, logger)
 	workorderNotificationReminderDAO := dao4.NewNotificationReminderDAO(db, logger)
 	workorderInboxDAO := dao4.NewWorkorderInboxDAO(db, logger)
@@ -210,7 +211,7 @@ func ProvideApp(cfg *config.Config) (*app.App, error) {
 	instanceHandler := api5.NewInstanceHandler(instanceService)
 	instanceFlowService := service4.NewInstanceFlowService(workorderInstanceFlowDAO, logger)
 	instanceFlowHandler := api5.NewInstanceFlowHandler(instanceFlowService)
-	instanceCommentService := service4.NewInstanceCommentService(workorderInstanceCommentDAO, workorderInstanceDAO, workorderNotificationService, logger)
+	instanceCommentService := service4.NewInstanceCommentService(workorderInstanceCommentDAO, workorderCommentAttachmentDAO, workorderInstanceDAO, workorderNotificationService, logger)
 	instanceCommentHandler := api5.NewInstanceCommentHandler(instanceCommentService)
 	categoryGroupService := service4.NewCategoryGroupService(workorderCategoryDAO, userDAO, logger)
 	categoryGroupHandler := api5.NewCategoryGroupHandler(categoryGroupService)
@@ -270,7 +271,7 @@ var HandlerSet = wire.NewSet(api.NewRoleHandler, api.NewApiHandler, api.NewAudit
 
 var ServiceSet = wire.NewSet(service3.NewClusterService, service3.NewDeploymentService, service3.NewNamespaceService, service3.NewSvcService, service3.NewNodeService, service3.NewTaintService, service3.NewYamlTaskService, service3.NewYamlTemplateService, service3.NewDaemonSetService, service3.NewEventService, service3.NewStatefulSetService, service3.NewServiceAccountService, service3.NewRoleService, service3.NewClusterRoleService, service3.NewRoleBindingService, service3.NewClusterRoleBindingService, service3.NewRBACService, service3.NewIngressService, service3.NewPodService, service3.NewConfigMapService, service3.NewSecretService, service3.NewPVService, service3.NewPVCService, service.NewUserService, service.NewApiService, service.NewRoleService, service.NewAuditService, service.NewSystemService, service.NewDepartmentService, alert2.NewAlertManagerEventService, alert2.NewAlertManagerOnDutyService, alert2.NewAlertManagerPoolService, alert2.NewAlertManagerRecordService, alert2.NewAlertManagerRuleService, alert2.NewAlertManagerSendService, scrape2.NewPrometheusScrapeService, scrape2.NewPrometheusPoolService, config3.NewMonitorConfigService, service2.NewNotAuthService, service4.NewFormDesignService, service4.NewInstanceService, service4.NewInstanceFlowService, service4.NewInstanceCommentService, service4.NewWorkorderInstanceTimeLineService, service4.NewWorkorderTemplateService, service4.NewWorkorderProcessService, service4.NewCategoryGroupService, service4.NewWorkorderNotificationService, service5.NewTreeNodeService, service5.NewTreeLocalService, service5.NewTreeCloudService, service5.NewCloudAccountService, service5.NewCloudAccountRegionService, service6.NewCronService)
 
-var DaoSet = wire.NewSet(alert.NewAlertManagerEventDAO, alert.NewAlertManagerOnDutyDAO, alert.NewAlertManagerPoolDAO, alert.NewAlertManagerRecordDAO, alert.NewAlertManagerRuleDAO, alert.NewAlertManagerSendDAO, scrape.NewScrapeJobDAO, scrape.NewScrapePoolDAO, config2.NewMonitorConfigDAO, dao.NewUserDAO, dao.NewRoleDAO, dao.NewApiDAO, dao.NewAuditDAO, dao.NewDepartmentDAO, dao3.NewClusterDAO, dao3.NewYamlTaskDAO, dao3.NewYamlTemplateDAO, dao4.NewWorkorderFormDesignDAO, dao4.NewTemplateDAO, dao4.NewWorkorderInstanceDAO, dao4.NewProcessDAO, dao4.NewWorkorderCategoryDAO, dao4.NewWorkorderInstanceCommentDAO, dao4.NewInstanceFlowDAO, dao4.NewInstanceTimeLineDAO, dao4.NewNotificationDAO, dao4.NewNotificationReminderDAO, dao4.NewWorkorderInboxDAO, dao2.NewTreeNodeDAO, dao2.NewTreeLocalDAO, dao2.NewTreeCloudDAO, dao2.NewCloudAccountDAO, dao2.NewCloudAccountRegionDAO, dao5.NewCronJobDAO)
+var DaoSet = wire.NewSet(alert.NewAlertManagerEventDAO, alert.NewAlertManagerOnDutyDAO, alert.NewAlertManagerPoolDAO, alert.NewAlertManagerRecordDAO, alert.NewAlertManagerRuleDAO, alert.NewAlertManagerSendDAO, scrape.NewScrapeJobDAO, scrape.NewScrapePoolDAO, config2.NewMonitorConfigDAO, dao.NewUserDAO, dao.NewRoleDAO, dao.NewApiDAO, dao.NewAuditDAO, dao.NewDepartmentDAO, dao3.NewClusterDAO, dao3.NewYamlTaskDAO, dao3.NewYamlTemplateDAO, dao4.NewWorkorderFormDesignDAO, dao4.NewTemplateDAO, dao4.NewWorkorderInstanceDAO, dao4.NewProcessDAO, dao4.NewWorkorderCategoryDAO, dao4.NewWorkorderInstanceCommentDAO, dao4.NewWorkorderCommentAttachmentDAO, dao4.NewInstanceFlowDAO, dao4.NewInstanceTimeLineDAO, dao4.NewNotificationDAO, dao4.NewNotificationReminderDAO, dao4.NewWorkorderInboxDAO, dao2.NewTreeNodeDAO, dao2.NewTreeLocalDAO, dao2.NewTreeCloudDAO, dao2.NewCloudAccountDAO, dao2.NewCloudAccountRegionDAO, dao5.NewCronJobDAO)
 
 var SSHSet = wire.NewSet(ssh.NewClient)
 
