@@ -31,6 +31,13 @@ workorder:
   attachment_dir: "./data/workorder/attachments"
   attachment_max_size_mb: 10
   attachment_max_count: 5
+ops:
+  trial_workorder_template_id: 0
+  activation_workorder_template_id: 0
+  lifecycle_workorder_template_id: 0
+  attachment_dir: "./data/ops/attachments"
+  attachment_max_size_mb: 20
+  attachment_max_count: 20
 notification:
   # 邮箱配置
   email:

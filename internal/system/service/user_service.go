@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/constants"
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
@@ -41,7 +42,7 @@ import (
 type UserService interface {
 	SignUp(ctx context.Context, user *model.UserSignUpReq) error
 	Login(ctx context.Context, user *model.UserLoginReq) (*model.User, error)
-	GetProfile(ctx context.Context, uid int) (*model.User, error)
+	GetProfile(ctx context.Context, uid int) (*model.UserProfileResp, error)
 	GetPermCode(ctx context.Context, uid int) ([]string, error)
 	GetUserDetail(ctx context.Context, uid int) (*model.User, error)
 	GetUserList(ctx context.Context, req *model.GetUserListReq) (model.ListResp[*model.User], error)
@@ -100,8 +101,91 @@ func (us *userService) Login(ctx context.Context, user *model.UserLoginReq) (*mo
 	return u, nil
 }
 
-func (us *userService) GetProfile(ctx context.Context, uid int) (*model.User, error) {
-	return us.dao.GetByID(ctx, uid)
+func (us *userService) GetProfile(ctx context.Context, uid int) (*model.UserProfileResp, error) {
+	user, err := us.dao.GetByID(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = us.ensureBuiltinRoles(ctx)
+
+	roleCodes := make([]string, 0)
+	roles, err := us.roleDao.GetRoles(ctx, uid)
+	if err != nil {
+		us.logger.Warn("获取用户角色失败", zap.Error(err), zap.Int("uid", uid))
+	} else {
+		for _, r := range roles {
+			if r == nil || r.Status != 1 || strings.TrimSpace(r.Code) == "" {
+				continue
+			}
+			roleCodes = append(roleCodes, r.Code)
+		}
+	}
+
+	// 兼容历史：admin 账号始终具备管理员菜单权限
+	if user.Username == "admin" && !containsString(roleCodes, "admin") {
+		roleCodes = append(roleCodes, "admin")
+		_ = us.ensureAdminUserRole(ctx, user.ID)
+	}
+
+	return &model.UserProfileResp{
+		User:   *user,
+		UserID: user.ID,
+		Roles:  roleCodes,
+	}, nil
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (us *userService) ensureBuiltinRoles(ctx context.Context) error {
+	builtins := []struct {
+		name, code, desc string
+	}{
+		{"管理员", "admin", "可见全部菜单；接口侧 admin 账号已全放行"},
+		{"运营人员", "ops", "可见运营管理与通用（含工单）"},
+		{"运维人员", "sre", "可见运维管理与通用（含工单）"},
+	}
+	for _, b := range builtins {
+		exists, err := us.roleDao.CheckExists(ctx, b.name, b.code, 0)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		if _, err := us.roleDao.Create(ctx, &model.Role{
+			Name: b.name, Code: b.code, Description: b.desc,
+			Status: 1, IsSystem: 1,
+		}, nil); err != nil {
+			us.logger.Warn("创建内置角色失败", zap.String("code", b.code), zap.Error(err))
+		}
+	}
+	return nil
+}
+
+func (us *userService) ensureAdminUserRole(ctx context.Context, userID int) error {
+	roles, _, err := us.roleDao.List(ctx, &model.ListRolesRequest{ListReq: model.ListReq{Page: 1, Size: 100}})
+	if err != nil {
+		return err
+	}
+	var adminRoleID int
+	for _, r := range roles {
+		if r.Code == "admin" {
+			adminRoleID = r.ID
+			break
+		}
+	}
+	if adminRoleID <= 0 {
+		return nil
+	}
+	return us.roleDao.AssignRolesToUser(ctx, userID, []int{adminRoleID}, userID)
 }
 
 func (us *userService) GetPermCode(ctx context.Context, uid int) ([]string, error) {

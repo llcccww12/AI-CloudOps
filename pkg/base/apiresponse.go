@@ -245,7 +245,8 @@ func HandleRequest(ctx *gin.Context, req interface{}, action func() (interface{}
 	if req != nil {
 		// json / form 如果提供了绑定对象，执行数据绑定
 		if err := ctx.ShouldBind(req); err != nil {
-			BadRequestWithDetails(ctx, err.Error(), "绑定数据失败")
+			// message 直接带上绑定详情，避免前端只看到笼统的「请求错误」
+			BadRequestError(ctx, fmt.Sprintf("参数错误: %v", err))
 			return
 		}
 	}

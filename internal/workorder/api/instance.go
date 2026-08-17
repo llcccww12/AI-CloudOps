@@ -97,7 +97,11 @@ func (h *InstanceHandler) CreateInstanceFromTemplate(ctx *gin.Context) {
 	req.OperatorName = user.Username
 
 	base.HandleRequest(ctx, &req, func() (any, error) {
-		return nil, h.service.CreateInstanceFromTemplate(ctx.Request.Context(), templateID, &req)
+		id, err := h.service.CreateInstanceFromTemplate(ctx.Request.Context(), templateID, &req)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": id}, nil
 	})
 }
 
@@ -124,8 +128,9 @@ func (h *InstanceHandler) DeleteInstance(ctx *gin.Context) {
 		return
 	}
 
+	user := ctx.MustGet("user").(jwt.UserClaims)
 	base.HandleRequest(ctx, nil, func() (any, error) {
-		return nil, h.service.DeleteInstance(ctx.Request.Context(), id)
+		return nil, h.service.DeleteInstance(ctx.Request.Context(), id, user.Uid)
 	})
 }
 
@@ -271,7 +276,11 @@ func (h *InstanceHandler) ApproveInstance(ctx *gin.Context) {
 	user := ctx.MustGet("user").(jwt.UserClaims)
 
 	base.HandleRequest(ctx, &req, func() (any, error) {
-		return nil, h.service.ApproveInstance(ctx.Request.Context(), req.ID, user.Uid, user.Username, req.Comment)
+		assigneeID := 0
+		if req.AssigneeID != nil {
+			assigneeID = *req.AssigneeID
+		}
+		return nil, h.service.ApproveInstance(ctx.Request.Context(), req.ID, user.Uid, user.Username, req.Comment, assigneeID, req.AttachmentIDs)
 	})
 }
 

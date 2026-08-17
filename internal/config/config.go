@@ -44,13 +44,24 @@ type Config struct {
 	Notification NotificationConfig `mapstructure:"notification"`
 	Webhook      WebhookConfig      `mapstructure:"webhook"`
 	Workorder    WorkorderConfig    `mapstructure:"workorder"`
+	Ops          OpsConfig          `mapstructure:"ops"`
 }
 
 // WorkorderConfig 工单相关配置
 type WorkorderConfig struct {
-	AttachmentDir      string `mapstructure:"attachment_dir" env:"WORKORDER_ATTACHMENT_DIR" default:"./data/workorder/attachments"`
-	AttachmentMaxSizeMB int   `mapstructure:"attachment_max_size_mb" env:"WORKORDER_ATTACHMENT_MAX_SIZE_MB" default:"10"`
-	AttachmentMaxCount  int   `mapstructure:"attachment_max_count" env:"WORKORDER_ATTACHMENT_MAX_COUNT" default:"5"`
+	AttachmentDir       string `mapstructure:"attachment_dir" env:"WORKORDER_ATTACHMENT_DIR" default:"./data/workorder/attachments"`
+	AttachmentMaxSizeMB int    `mapstructure:"attachment_max_size_mb" env:"WORKORDER_ATTACHMENT_MAX_SIZE_MB" default:"10"`
+	AttachmentMaxCount  int    `mapstructure:"attachment_max_count" env:"WORKORDER_ATTACHMENT_MAX_COUNT" default:"5"`
+}
+
+// OpsConfig 运营管理配置
+type OpsConfig struct {
+	TrialWorkorderTemplateID      int    `mapstructure:"trial_workorder_template_id" env:"OPS_TRIAL_WORKORDER_TEMPLATE_ID" default:"0"`
+	ActivationWorkorderTemplateID int    `mapstructure:"activation_workorder_template_id" env:"OPS_ACTIVATION_WORKORDER_TEMPLATE_ID" default:"0"`
+	LifecycleWorkorderTemplateID  int    `mapstructure:"lifecycle_workorder_template_id" env:"OPS_LIFECYCLE_WORKORDER_TEMPLATE_ID" default:"0"`
+	AttachmentDir                 string `mapstructure:"attachment_dir" env:"OPS_ATTACHMENT_DIR" default:"./data/ops/attachments"`
+	AttachmentMaxSizeMB           int    `mapstructure:"attachment_max_size_mb" env:"OPS_ATTACHMENT_MAX_SIZE_MB" default:"20"`
+	AttachmentMaxCount            int    `mapstructure:"attachment_max_count" env:"OPS_ATTACHMENT_MAX_COUNT" default:"20"`
 }
 
 func (c *Config) Validate() error {

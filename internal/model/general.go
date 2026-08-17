@@ -74,7 +74,7 @@ type Model struct {
 
 type ListReq struct {
 	Page   int    `json:"page" form:"page" binding:"omitempty,min=1"`
-	Size   int    `json:"size" form:"size" binding:"omitempty,min=10,max=100"`
+	Size   int    `json:"size" form:"size" binding:"omitempty,min=1,max=100"`
 	Search string `json:"search" form:"search" binding:"omitempty"`
 }
 

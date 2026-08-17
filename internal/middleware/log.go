@@ -37,6 +37,7 @@ import (
 
 type AccessLog struct {
 	Path     string        `json:"path"`     // 请求路径
+	Query    string        `json:"query"`    // 查询参数
 	Method   string        `json:"method"`   // 请求方法
 	ReqBody  string        `json:"reqBody"`  // 请求体内容
 	Status   int           `json:"status"`   // 响应状态码
@@ -71,6 +72,7 @@ func (lm *LogMiddleware) Log() gin.HandlerFunc {
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		al := AccessLog{
 			Path:    path,
+			Query:   c.Request.URL.RawQuery,
 			Method:  method,
 			ReqBody: string(bodyBytes),
 		}

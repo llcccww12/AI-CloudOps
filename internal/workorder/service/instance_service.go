@@ -48,15 +48,15 @@ var (
 
 type InstanceService interface {
 	CreateInstance(ctx context.Context, req *model.CreateWorkorderInstanceReq) error
-	CreateInstanceFromTemplate(ctx context.Context, templateID int, req *model.CreateWorkorderInstanceFromTemplateReq) error
+	CreateInstanceFromTemplate(ctx context.Context, templateID int, req *model.CreateWorkorderInstanceFromTemplateReq) (int, error)
 	UpdateInstance(ctx context.Context, req *model.UpdateWorkorderInstanceReq) error
-	DeleteInstance(ctx context.Context, id int) error
+	DeleteInstance(ctx context.Context, id int, operatorID int) error
 	GetInstance(ctx context.Context, id int) (*model.WorkorderInstance, error)
 	MarkNotificationRead(ctx context.Context, instanceID, userID int)
 	ListInstance(ctx context.Context, req *model.ListWorkorderInstanceReq) (*model.ListResp[*model.WorkorderInstance], error)
 	SubmitInstance(ctx context.Context, id int, operatorID int, operatorName string) error
 	AssignInstance(ctx context.Context, id int, assigneeID int, operatorID int, operatorName string, mode string, comment string) error
-	ApproveInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
+	ApproveInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string, nextAssigneeID int, attachmentIDs []int) error
 	RejectInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
 	CancelInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
 	CompleteInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error
@@ -71,6 +71,7 @@ type instanceService struct {
 	flowDao             dao.WorkorderInstanceFlowDAO
 	timelineDao         dao.WorkorderInstanceTimelineDAO
 	commentDao          dao.WorkorderInstanceCommentDAO
+	attachmentDao       dao.WorkorderCommentAttachmentDAO
 	processDao          dao.WorkorderProcessDAO
 	formDesignDao       dao.WorkorderFormDesignDAO
 	templateDao         dao.WorkorderTemplateDAO
@@ -83,6 +84,7 @@ func NewInstanceService(
 	flowDao dao.WorkorderInstanceFlowDAO,
 	timelineDao dao.WorkorderInstanceTimelineDAO,
 	commentDao dao.WorkorderInstanceCommentDAO,
+	attachmentDao dao.WorkorderCommentAttachmentDAO,
 	processDao dao.WorkorderProcessDAO,
 	formDesignDao dao.WorkorderFormDesignDAO,
 	templateDao dao.WorkorderTemplateDAO,
@@ -94,6 +96,7 @@ func NewInstanceService(
 		flowDao:             flowDao,
 		timelineDao:         timelineDao,
 		commentDao:          commentDao,
+		attachmentDao:       attachmentDao,
 		processDao:          processDao,
 		formDesignDao:       formDesignDao,
 		templateDao:         templateDao,
@@ -199,19 +202,19 @@ func (s *instanceService) CreateInstance(ctx context.Context, req *model.CreateW
 	return nil
 }
 
-func (s *instanceService) CreateInstanceFromTemplate(ctx context.Context, templateID int, req *model.CreateWorkorderInstanceFromTemplateReq) error {
+func (s *instanceService) CreateInstanceFromTemplate(ctx context.Context, templateID int, req *model.CreateWorkorderInstanceFromTemplateReq) (int, error) {
 	if req.Priority < model.PriorityHigh || req.Priority > model.PriorityLow {
-		return fmt.Errorf("优先级无效")
+		return 0, fmt.Errorf("优先级无效")
 	}
 
 	template, err := s.templateDao.GetTemplate(ctx, templateID)
 	if err != nil {
 		s.logger.Error("获取工单模板失败", zap.Error(err), zap.Int("templateID", templateID))
-		return fmt.Errorf("工单模板不存在或已禁用")
+		return 0, fmt.Errorf("工单模板不存在或已禁用")
 	}
 
 	if template.Status != model.TemplateStatusEnabled {
-		return fmt.Errorf("只能使用启用状态的模板创建工单")
+		return 0, fmt.Errorf("只能使用启用状态的模板创建工单")
 	}
 
 	// 合并表单数据：模板默认值 + 用户提交的数据
@@ -233,33 +236,33 @@ func (s *instanceService) CreateInstanceFromTemplate(ctx context.Context, templa
 	process, err := s.processDao.GetProcessByID(ctx, template.ProcessID)
 	if err != nil {
 		s.logger.Error("获取流程定义失败", zap.Error(err), zap.Int("processID", template.ProcessID))
-		return fmt.Errorf("流程不存在或已停用")
+		return 0, fmt.Errorf("流程不存在或已停用")
 	}
 
 	if process.Status != model.ProcessStatusPublished {
-		return fmt.Errorf("只能使用已发布的流程创建工单")
+		return 0, fmt.Errorf("只能使用已发布的流程创建工单")
 	}
 
 	if err := s.validateFormData(ctx, process.FormDesignID, formData); err != nil {
 		s.logger.Error("表单数据验证失败", zap.Error(err), zap.Int("formDesignID", process.FormDesignID))
-		return fmt.Errorf("表单数据验证失败: %w", err)
+		return 0, fmt.Errorf("表单数据验证失败: %w", err)
 	}
 
 	// 确保实例名称唯一
 	if _, err := s.dao.GetInstanceByTitle(ctx, req.Title); err != nil {
 		if err != dao.ErrInstanceNotFound {
 			s.logger.Error("获取工单实例失败", zap.Error(err), zap.String("title", req.Title))
-			return err
+			return 0, err
 		}
 	} else {
-		return fmt.Errorf("工单实例名称已存在")
+		return 0, fmt.Errorf("工单实例名称已存在")
 	}
 
 	// 生成工单编号
 	serialNumber, err := s.dao.GenerateSerialNumber(ctx)
 	if err != nil {
 		s.logger.Error("生成工单编号失败", zap.Error(err))
-		return err
+		return 0, err
 	}
 
 	instance := &model.WorkorderInstance{
@@ -279,7 +282,7 @@ func (s *instanceService) CreateInstanceFromTemplate(ctx context.Context, templa
 
 	if err := s.dao.CreateInstance(ctx, instance); err != nil {
 		s.logger.Error("创建工单实例失败", zap.Error(err))
-		return fmt.Errorf("创建工单实例失败: %w", err)
+		return 0, fmt.Errorf("创建工单实例失败: %w", err)
 	}
 
 	s.createFlowRecord(ctx, instance.ID, model.FlowActionSubmit, req.OperatorID, req.OperatorName,
@@ -289,7 +292,7 @@ func (s *instanceService) CreateInstanceFromTemplate(ctx context.Context, templa
 
 	s.sendNotificationAsync(instance.ID, model.EventTypeInstanceCreated, fmt.Sprintf("从模板 %s 创建", template.Name))
 
-	return nil
+	return instance.ID, nil
 }
 
 func (s *instanceService) UpdateInstance(ctx context.Context, req *model.UpdateWorkorderInstanceReq) error {
@@ -337,7 +340,7 @@ func (s *instanceService) UpdateInstance(ctx context.Context, req *model.UpdateW
 	return nil
 }
 
-func (s *instanceService) DeleteInstance(ctx context.Context, id int) error {
+func (s *instanceService) DeleteInstance(ctx context.Context, id int, operatorID int) error {
 	if id <= 0 {
 		return ErrInvalidRequest
 	}
@@ -348,11 +351,8 @@ func (s *instanceService) DeleteInstance(ctx context.Context, id int) error {
 		return err
 	}
 
-	// 只允许删除草稿、已完成、已拒绝状态的工单
-	if instance.Status != model.InstanceStatusDraft &&
-		instance.Status != model.InstanceStatusCompleted &&
-		instance.Status != model.InstanceStatusRejected {
-		return fmt.Errorf("只有草稿、已完成或已拒绝状态的工单可以删除")
+	if operatorID <= 0 || instance.OperatorID != operatorID {
+		return fmt.Errorf("仅工单创建者可以删除")
 	}
 
 	if err := s.dao.DeleteInstance(ctx, id); err != nil {
@@ -368,7 +368,8 @@ func (s *instanceService) DeleteInstance(ctx context.Context, id int) error {
 func (s *instanceService) GetInstance(ctx context.Context, id int) (*model.WorkorderInstance, error) {
 	instance, err := s.dao.GetInstanceByID(ctx, id)
 	if err != nil {
-		s.logger.Error("获取工单实例失败", zap.Error(err), zap.Int("instanceID", id))
+		// 定时同步/列表补全会查询已删工单，降为 Warn 避免刷屏
+		s.logger.Warn("获取工单实例失败", zap.Error(err), zap.Int("instanceID", id))
 		return nil, err
 	}
 
@@ -514,8 +515,8 @@ func (s *instanceService) AssignInstance(ctx context.Context, id int, assigneeID
 		if err := s.ensureAssigneePermission(instance, operatorID); err != nil {
 			return err
 		}
-	} else if !s.canUserClaim(currentStep, operatorID) {
-		return fmt.Errorf("当前用户无权领取或指派此工单")
+	} else if !s.canUserClaim(currentStep, operatorID) && instance.OperatorID != operatorID {
+		return fmt.Errorf("当前用户无权领取或下发此工单")
 	}
 
 	if mode == model.AssignModeForward {
@@ -611,8 +612,8 @@ func (s *instanceService) canUserClaim(step *model.ProcessStep, operatorID int) 
 	return s.canUserOperateStep(step, operatorID)
 }
 
-// ApproveInstance 审批通过工单
-func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string) error {
+// ApproveInstance 审批通过工单；有后续节点时必须指定 nextAssigneeID
+func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorID int, operatorName string, comment string, nextAssigneeID int, attachmentIDs []int) error {
 	instance, err := s.dao.GetInstanceByID(ctx, id)
 	if err != nil {
 		return err
@@ -649,45 +650,33 @@ func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorI
 		return fmt.Errorf("获取当前步骤失败: %w", err)
 	}
 
-	// 获取流程定义以查找下一个步骤
-	process, err := s.processDao.GetProcessByID(ctx, instance.ProcessID)
+	definition, err := s.loadProcessDefinition(ctx, instance.ProcessID)
 	if err != nil {
-		s.logger.Error("获取流程定义失败", zap.Error(err), zap.Int("processID", instance.ProcessID))
-		return fmt.Errorf("获取流程定义失败: %w", err)
-	}
-
-	// 解析流程定义
-	var definition model.ProcessDefinition
-	definitionBytes, err := json.Marshal(process.Definition)
-	if err != nil {
-		s.logger.Error("流程定义序列化失败", zap.Error(err))
-		return fmt.Errorf("流程定义序列化失败: %w", err)
-	}
-
-	if err := json.Unmarshal(definitionBytes, &definition); err != nil {
-		s.logger.Error("流程定义解析失败", zap.Error(err))
-		return fmt.Errorf("流程定义解析失败: %w", err)
+		return err
 	}
 
 	nextStep := s.getNextStep(currentStep, definition)
+	needsNextAssignee := nextStep != nil && nextStep.Type != model.ProcessStepTypeEnd
 
 	fromStatus := instance.Status
 	var toStatus int8
 	var completedAt *time.Time
 
-	if nextStep == nil || nextStep.Type == model.ProcessStepTypeEnd {
-		// 没有下一个步骤或下一个步骤是结束节点，标记为完成
+	if !needsNextAssignee {
 		toStatus = model.InstanceStatusCompleted
 		now := time.Now()
 		completedAt = &now
 		s.logger.Info("工单审批完成，进入结束状态", zap.Int("instanceID", id))
 	} else {
-		// 有下一个步骤，进入下一个步骤对应的状态
+		if nextAssigneeID <= 0 {
+			return fmt.Errorf("审批通过后需指定下一节点「%s」的处理人", nextStep.Name)
+		}
 		toStatus = s.getStatusForStep(nextStep)
 		s.logger.Info("工单审批通过，进入下一步骤",
 			zap.Int("instanceID", id),
 			zap.String("nextStepID", nextStep.ID),
 			zap.String("nextStepType", nextStep.Type),
+			zap.Int("nextAssigneeID", nextAssigneeID),
 			zap.Int8("nextStatus", toStatus))
 	}
 
@@ -696,16 +685,15 @@ func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorI
 		instance.CompletedAt = completedAt
 	}
 
-	// 更新当前步骤ID
-	if nextStep != nil {
+	if needsNextAssignee {
 		instance.CurrentStepID = &nextStep.ID
-		s.logger.Info("更新工单当前步骤",
-			zap.Int("instanceID", id),
-			zap.String("nextStepID", nextStep.ID),
-			zap.String("nextStepName", nextStep.Name))
+		instance.AssigneeID = &nextAssigneeID
+	} else if nextStep != nil {
+		instance.CurrentStepID = &nextStep.ID
+		instance.AssigneeID = nil
 	} else {
 		instance.CurrentStepID = nil
-		s.logger.Info("流程结束，清空当前步骤ID", zap.Int("instanceID", id))
+		instance.AssigneeID = nil
 	}
 
 	if err := s.dao.UpdateInstance(ctx, instance); err != nil {
@@ -713,44 +701,68 @@ func (s *instanceService) ApproveInstance(ctx context.Context, id int, operatorI
 		return err
 	}
 
-	if toStatus != model.InstanceStatusCompleted {
+	if needsNextAssignee {
+		if err := s.dao.UpdateInstanceAssignee(ctx, id, &nextAssigneeID); err != nil {
+			return fmt.Errorf("指定下一节点处理人失败: %w", err)
+		}
+	} else {
 		if err := s.dao.UpdateInstanceAssignee(ctx, id, nil); err != nil {
-			s.logger.Warn("审批后清空处理人失败", zap.Error(err), zap.Int("instanceID", id))
+			s.logger.Warn("审批完成后清空处理人失败", zap.Error(err), zap.Int("instanceID", id))
 		}
 	}
 
-	s.createFlowRecord(ctx, id, model.FlowActionApprove, operatorID, operatorName, fromStatus, toStatus, comment, 2)
+	flowNote := comment
+	if needsNextAssignee {
+		if flowNote == "" {
+			flowNote = fmt.Sprintf("进入「%s」，处理人用户ID: %d", nextStep.Name, nextAssigneeID)
+		} else {
+			flowNote = fmt.Sprintf("进入「%s」（处理人用户ID: %d）：%s", nextStep.Name, nextAssigneeID, flowNote)
+		}
+	}
+	s.createFlowRecord(ctx, id, model.FlowActionApprove, operatorID, operatorName, fromStatus, toStatus, flowNote, 2)
 
-	timelineComment := fmt.Sprintf("工单审批通过: %s", comment)
-	if nextStep != nil && nextStep.Type != model.ProcessStepTypeEnd {
-		timelineComment += fmt.Sprintf("，进入步骤: %s", nextStep.Name)
+	timelineComment := "工单审批通过"
+	if comment != "" {
+		timelineComment = fmt.Sprintf("工单审批通过: %s", comment)
+	}
+	if needsNextAssignee {
+		timelineComment += fmt.Sprintf("，进入步骤: %s（处理人用户ID: %d）", nextStep.Name, nextAssigneeID)
 	}
 	s.createTimelineRecord(ctx, id, model.TimelineActionApprove, operatorID, operatorName, timelineComment)
 
-	// 如果有审批意见，则添加系统评论
-	if comment != "" {
+	if comment != "" || len(attachmentIDs) > 0 {
+		content := "审批通过"
+		if comment != "" {
+			content = fmt.Sprintf("审批通过：%s", comment)
+		}
 		commentEntity := &model.WorkorderInstanceComment{
 			InstanceID:   id,
 			OperatorID:   operatorID,
 			OperatorName: operatorName,
-			Content:      fmt.Sprintf("审批通过：%s", comment),
+			Content:      content,
 			Type:         model.CommentTypeSystem,
 			Status:       model.CommentStatusNormal,
 			IsSystem:     1,
 		}
-
 		if err := s.commentDao.CreateInstanceComment(ctx, commentEntity); err != nil {
 			s.logger.Error("创建审批评论失败", zap.Error(err), zap.Int("instanceID", id))
+		} else if len(attachmentIDs) > 0 {
+			if err := s.attachmentDao.BindAttachmentsToComment(ctx, commentEntity.ID, id, operatorID, attachmentIDs); err != nil {
+				s.logger.Error("绑定审批附件失败", zap.Error(err), zap.Int("instanceID", id), zap.Int("commentID", commentEntity.ID))
+				return fmt.Errorf("绑定审批附件失败: %w", err)
+			}
 		}
 	}
 
-	// 发送工单审批通过通知
 	eventType := model.EventTypeInstanceApproved
 	if toStatus == model.InstanceStatusCompleted {
 		eventType = model.EventTypeInstanceCompleted
 		s.stopNotificationReminders(ctx, id)
 	}
 	s.sendNotificationAsync(id, eventType, comment)
+	if needsNextAssignee {
+		s.sendNotificationAsync(id, model.EventTypeInstanceAssigned, fmt.Sprintf("已指派处理「%s」", nextStep.Name))
+	}
 
 	return nil
 }
@@ -1172,7 +1184,8 @@ func (s *instanceService) GetAvailableActions(ctx context.Context, instanceID in
 		return s.getActionsForStep(currentStep, instance.Status), nil
 	}
 
-	if s.canUserClaim(currentStep, operatorID) {
+	// 未领取：可领取/下发（节点受理人或创建者）
+	if s.canUserClaim(currentStep, operatorID) || instance.OperatorID == operatorID {
 		return []string{model.FlowActionAssign}, nil
 	}
 	return []string{}, nil

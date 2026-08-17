@@ -165,8 +165,10 @@ type AssignWorkorderInstanceReq struct {
 
 // 通过工单
 type ApproveWorkorderInstanceReq struct {
-	ID      int    `json:"id" form:"id" binding:"required,min=1"`
-	Comment string `json:"comment" binding:"omitempty,max=500"`
+	ID            int    `json:"id" form:"id" binding:"required,min=1"`
+	Comment       string `json:"comment" binding:"omitempty,max=500"`
+	AssigneeID    *int   `json:"assignee_id" binding:"omitempty,min=1"` // 下一节点处理人；有后续节点时必填
+	AttachmentIDs []int  `json:"attachment_ids" binding:"omitempty,dive,min=1"`
 }
 
 // 拒绝工单

@@ -41,6 +41,7 @@ import (
 	"github.com/GoSimplicity/AI-CloudOps/internal/prometheus/cache"
 	"github.com/GoSimplicity/AI-CloudOps/internal/prometheus/dao/alert"
 	workorderService "github.com/GoSimplicity/AI-CloudOps/internal/workorder/service"
+	opsService "github.com/GoSimplicity/AI-CloudOps/internal/ops/service"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -58,6 +59,7 @@ const (
 	DefaultPrometheusConfigRefreshInterval = 15 * time.Second
 	K8sCheckInterval                       = 60 * time.Second
 	WorkorderReminderInterval              = 1 * time.Minute
+	OpsReminderInterval                    = 1 * time.Hour
 	MaxRetries                             = 3
 	RetryDelay                             = 5 * time.Second
 )
@@ -85,6 +87,7 @@ type unifiedCronManager struct {
 	builtinTaskMgr *BuiltinTaskManager
 
 	notificationService workorderService.WorkorderNotificationService
+	opsReminderService  opsService.OpsReminderService
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -101,6 +104,7 @@ func NewUnifiedCronManager(
 	cronScheduler *scheduler.CronScheduler,
 	builtinTaskMgr *BuiltinTaskManager,
 	notificationService workorderService.WorkorderNotificationService,
+	opsReminderService opsService.OpsReminderService,
 ) CronManager {
 	return &unifiedCronManager{
 		logger:              logger,
@@ -112,6 +116,7 @@ func NewUnifiedCronManager(
 		cronScheduler:       cronScheduler,
 		builtinTaskMgr:      builtinTaskMgr,
 		notificationService: notificationService,
+		opsReminderService:  opsReminderService,
 	}
 }
 
@@ -196,6 +201,15 @@ func (cm *unifiedCronManager) StartSystemTasks(ctx context.Context) error {
 				defer cm.wg.Done()
 				if err := cm.startWorkorderNotificationReminderManager(ctx); err != nil {
 					cm.logger.Error("工单通知未读催发任务异常退出", zap.String("taskName", taskName), zap.Error(err))
+				}
+			}(task.Name)
+
+		case "ops_reminder_scan":
+			cm.wg.Add(1)
+			go func(taskName string) {
+				defer cm.wg.Done()
+				if err := cm.startOpsReminderScanManager(ctx); err != nil {
+					cm.logger.Error("运营提醒扫描任务异常退出", zap.String("taskName", taskName), zap.Error(err))
 				}
 			}(task.Name)
 
@@ -918,5 +932,38 @@ func (cm *unifiedCronManager) startWorkorderNotificationReminderManager(ctx cont
 
 	<-ctx.Done()
 	cm.logger.Info("工单通知未读催发任务已停止")
+	return nil
+}
+
+func (cm *unifiedCronManager) startOpsReminderScanManager(ctx context.Context) error {
+	cm.logger.Info("启动运营提醒扫描任务")
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				cm.logger.Error("运营提醒扫描任务发生 panic，正在重启", zap.Any("panic", r))
+				time.Sleep(RetryDelay)
+				go cm.startOpsReminderScanManager(ctx)
+			}
+		}()
+
+		wait.UntilWithContext(ctx, func(ctx context.Context) {
+			defer func() {
+				if r := recover(); r != nil {
+					cm.logger.Error("运营提醒扫描任务执行时发生 panic", zap.Any("panic", r))
+				}
+			}()
+
+			if cm.opsReminderService == nil {
+				return
+			}
+			if err := cm.opsReminderService.ScanAndNotify(ctx); err != nil {
+				cm.logger.Error("运营提醒扫描失败", zap.Error(err))
+			}
+		}, OpsReminderInterval)
+	}()
+
+	<-ctx.Done()
+	cm.logger.Info("运营提醒扫描任务已停止")
 	return nil
 }

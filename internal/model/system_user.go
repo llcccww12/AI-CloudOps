@@ -128,3 +128,10 @@ type DeleteUserReq struct {
 type GetUserDetailReq struct {
 	ID int `json:"id" form:"id" binding:"required"`
 }
+
+// UserProfileResp 登录后资料（含角色码，供前端菜单过滤）
+type UserProfileResp struct {
+	User
+	UserID int      `json:"user_id"`
+	Roles  []string `json:"roles"`
+}

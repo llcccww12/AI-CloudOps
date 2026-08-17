@@ -33,6 +33,7 @@ import (
 	systemApi "github.com/GoSimplicity/AI-CloudOps/internal/system/api"
 	resourceApi "github.com/GoSimplicity/AI-CloudOps/internal/tree/api"
 	workorderApi "github.com/GoSimplicity/AI-CloudOps/internal/workorder/api"
+	opsApi "github.com/GoSimplicity/AI-CloudOps/internal/ops/api"
 	"github.com/gin-gonic/gin"
 )
 
@@ -86,6 +87,7 @@ func InitGinServer(
 	cloudAccountHdl *resourceApi.CloudAccountHandler,
 	cloudAccountRegionHdl *resourceApi.CloudAccountRegionHandler,
 	notificationHdl *workorderApi.NotificationHandler,
+	opsHdl *opsApi.OpsHandler,
 	ingressHdl *k8sApi.K8sIngressHandler,
 	k8sPodHdl *k8sApi.K8sPodHandler,
 	k8sPVHdl *k8sApi.K8sPVHandler,
@@ -141,6 +143,7 @@ func InitGinServer(
 	cloudAccountHdl.RegisterRouters(server)
 	cloudAccountRegionHdl.RegisterRouters(server)
 	notificationHdl.RegisterRouters(server)
+	opsHdl.RegisterRouters(server)
 	ingressHdl.RegisterRouters(server)
 	k8sPodHdl.RegisterRouters(server)
 	cronJobHdl.RegisterRouters(server)

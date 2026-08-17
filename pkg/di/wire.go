@@ -61,6 +61,9 @@ import (
 	workorderHandler "github.com/GoSimplicity/AI-CloudOps/internal/workorder/api"
 	workorderDao "github.com/GoSimplicity/AI-CloudOps/internal/workorder/dao"
 	workorderService "github.com/GoSimplicity/AI-CloudOps/internal/workorder/service"
+	opsHandler "github.com/GoSimplicity/AI-CloudOps/internal/ops/api"
+	opsDao "github.com/GoSimplicity/AI-CloudOps/internal/ops/dao"
+	opsService "github.com/GoSimplicity/AI-CloudOps/internal/ops/service"
 	ijwt "github.com/GoSimplicity/AI-CloudOps/pkg/jwt"
 	"github.com/GoSimplicity/AI-CloudOps/pkg/sse"
 	pkgSSH "github.com/GoSimplicity/AI-CloudOps/pkg/ssh"
@@ -117,6 +120,7 @@ var HandlerSet = wire.NewSet(
 	workorderHandler.NewWorkorderProcessHandler,
 	workorderHandler.NewCategoryGroupHandler,
 	workorderHandler.NewNotificationHandler,
+	opsHandler.NewOpsHandler,
 	treeHandler.NewTreeNodeHandler,
 	treeHandler.NewTreeLocalHandler,
 	treeHandler.NewTreeCloudHandler,
@@ -175,6 +179,12 @@ var ServiceSet = wire.NewSet(
 	workorderService.NewWorkorderProcessService,
 	workorderService.NewCategoryGroupService,
 	workorderService.NewWorkorderNotificationService,
+	opsService.NewOpsCustomerService,
+	opsService.NewOpsLeadService,
+	opsService.NewOpsBizService,
+	opsService.NewOpsFinanceService,
+	opsService.NewOpsReminderService,
+	opsService.NewOpsAttachmentService,
 	treeService.NewTreeNodeService,
 	treeService.NewTreeLocalService,
 	treeService.NewTreeCloudService,
@@ -213,6 +223,19 @@ var DaoSet = wire.NewSet(
 	workorderDao.NewNotificationDAO,
 	workorderDao.NewNotificationReminderDAO,
 	workorderDao.NewWorkorderInboxDAO,
+	opsDao.NewOpsCustomerDAO,
+	opsDao.NewOpsFollowupDAO,
+	opsDao.NewOpsExhibitionDAO,
+	opsDao.NewOpsVisitDAO,
+	opsDao.NewOpsTrialDAO,
+	opsDao.NewOpsContractDAO,
+	opsDao.NewOpsActivationDAO,
+	opsDao.NewOpsApprovalLinkDAO,
+	opsDao.NewOpsSettlementDAO,
+	opsDao.NewOpsInvoiceDAO,
+	opsDao.NewOpsPaymentDAO,
+	opsDao.NewOpsReminderRuleDAO,
+	opsDao.NewOpsAttachmentDAO,
 	treeDao.NewTreeNodeDAO,
 	treeDao.NewTreeLocalDAO,
 	treeDao.NewTreeCloudDAO,

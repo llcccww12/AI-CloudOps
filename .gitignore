@@ -122,3 +122,5 @@ AI-CloudOps
 .cursor
 # workorder local attachments
 data/workorder/
+data/ops/
+

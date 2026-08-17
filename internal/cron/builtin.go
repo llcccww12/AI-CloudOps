@@ -74,6 +74,13 @@ func GetBuiltinTasks() []BuiltinTaskDefinition {
 			TaskType:    "workorder_notification_reminder",
 			Enabled:     true,
 		},
+		{
+			Name:        "运营提醒扫描",
+			Description: "扫描试用/合同/结算到期并发送站内提醒，同步审批结果",
+			Schedule:    "0 * * * *", // 每小时
+			TaskType:    "ops_reminder_scan",
+			Enabled:     true,
+		},
 	}
 }
 

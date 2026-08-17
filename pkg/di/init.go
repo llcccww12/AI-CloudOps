@@ -87,6 +87,21 @@ func InitTables(db *gorm.DB) error {
 		&model.WorkorderInboxMessage{},
 		&model.WorkorderInstanceTimeline{},
 
+		// 运营管理
+		&model.OpsCustomer{},
+		&model.OpsFollowup{},
+		&model.OpsExhibition{},
+		&model.OpsVisit{},
+		&model.OpsTrial{},
+		&model.OpsContract{},
+		&model.OpsActivation{},
+		&model.OpsApprovalLink{},
+		&model.OpsSettlement{},
+		&model.OpsInvoice{},
+		&model.OpsPayment{},
+		&model.OpsReminderRule{},
+		&model.OpsAttachment{},
+
 		&model.CronJob{},
 	)
 }
