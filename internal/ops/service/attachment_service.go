@@ -17,6 +17,7 @@ import (
 
 type OpsAttachmentService interface {
 	Upload(ctx context.Context, bizType string, bizID, operatorID int, header *multipart.FileHeader) (*model.OpsAttachment, error)
+	UploadPending(ctx context.Context, bizType string, operatorID int, header *multipart.FileHeader) (*model.OpsAttachment, error)
 	List(ctx context.Context, bizType string, bizID int) ([]*model.OpsAttachment, error)
 	Download(ctx context.Context, id int) (*model.OpsAttachment, string, error)
 	Delete(ctx context.Context, id int) error
@@ -26,6 +27,7 @@ type opsAttachmentService struct {
 	attachmentDAO dao.OpsAttachmentDAO
 	contractDAO   dao.OpsContractDAO
 	settlementDAO dao.OpsSettlementDAO
+	exhibitionDAO dao.OpsExhibitionDAO
 	logger        *zap.Logger
 }
 
@@ -33,12 +35,14 @@ func NewOpsAttachmentService(
 	attachmentDAO dao.OpsAttachmentDAO,
 	contractDAO dao.OpsContractDAO,
 	settlementDAO dao.OpsSettlementDAO,
+	exhibitionDAO dao.OpsExhibitionDAO,
 	logger *zap.Logger,
 ) OpsAttachmentService {
 	return &opsAttachmentService{
 		attachmentDAO: attachmentDAO,
 		contractDAO:   contractDAO,
 		settlementDAO: settlementDAO,
+		exhibitionDAO: exhibitionDAO,
 		logger:        logger,
 	}
 }
@@ -50,6 +54,9 @@ func (s *opsAttachmentService) ensureBizExists(ctx context.Context, bizType stri
 		return err
 	case model.OpsAttachmentBizSettlement:
 		_, err := s.settlementDAO.GetByID(ctx, bizID)
+		return err
+	case model.OpsAttachmentBizExhibition:
+		_, err := s.exhibitionDAO.GetByID(ctx, bizID)
 		return err
 	default:
 		return fmt.Errorf("不支持的业务类型: %s", bizType)
@@ -73,6 +80,23 @@ func (s *opsAttachmentService) Upload(ctx context.Context, bizType string, bizID
 		return nil, fmt.Errorf("附件数量已达上限 %d 个", maxCount)
 	}
 
+	return s.saveFile(ctx, bizType, bizID, operatorID, header)
+}
+
+// UploadPending 公开登记等场景：先上传后绑定业务 ID（biz_id=0）
+func (s *opsAttachmentService) UploadPending(ctx context.Context, bizType string, operatorID int, header *multipart.FileHeader) (*model.OpsAttachment, error) {
+	if header == nil {
+		return nil, fmt.Errorf("未选择文件")
+	}
+	switch bizType {
+	case model.OpsAttachmentBizExhibition:
+	default:
+		return nil, fmt.Errorf("不支持的业务类型: %s", bizType)
+	}
+	return s.saveFile(ctx, bizType, 0, operatorID, header)
+}
+
+func (s *opsAttachmentService) saveFile(ctx context.Context, bizType string, bizID, operatorID int, header *multipart.FileHeader) (*model.OpsAttachment, error) {
 	maxSize := opsUtils.GetOpsAttachmentMaxSizeBytes()
 	if header.Size > maxSize {
 		return nil, fmt.Errorf("文件大小不能超过 %dMB", maxSize/1024/1024)
@@ -85,8 +109,12 @@ func (s *opsAttachmentService) Upload(ctx context.Context, bizType string, bizID
 
 	safeName := opsUtils.SanitizeOpsAttachmentFileName(header.Filename)
 	storedName := fmt.Sprintf("%s_%s", uuid.NewString(), safeName)
-	relPath := filepath.ToSlash(filepath.Join(bizType, fmt.Sprintf("%d", bizID), storedName))
-	absDir := filepath.Join(opsUtils.GetOpsAttachmentDir(), bizType, fmt.Sprintf("%d", bizID))
+	folder := fmt.Sprintf("%d", bizID)
+	if bizID == 0 {
+		folder = "pending"
+	}
+	relPath := filepath.ToSlash(filepath.Join(bizType, folder, storedName))
+	absDir := filepath.Join(opsUtils.GetOpsAttachmentDir(), bizType, folder)
 	if err := os.MkdirAll(absDir, 0o750); err != nil {
 		return nil, fmt.Errorf("创建附件目录失败: %w", err)
 	}

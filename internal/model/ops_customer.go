@@ -48,7 +48,7 @@ const (
 type OpsCustomer struct {
 	Model
 	Name           string     `json:"name" gorm:"column:name;type:varchar(200);not null;index;comment:客户名称"`
-	Stage          string     `json:"stage" gorm:"column:stage;type:varchar(32);not null;index;default:lead;comment:阶段"`
+	Stage          string     `json:"stage" gorm:"column:stage;type:varchar(32);not null;index;default:intent;comment:阶段"`
 	DemandTypes    StringList `json:"demand_types" gorm:"column:demand_types;type:text;serializer:json;comment:需求类别"`
 	Industry       string     `json:"industry" gorm:"column:industry;type:varchar(100);comment:行业"`
 	ContactName    string     `json:"contact_name" gorm:"column:contact_name;type:varchar(100);comment:联系人"`
@@ -72,7 +72,7 @@ func (OpsCustomer) TableName() string { return "cl_ops_customer" }
 
 type CreateOpsCustomerReq struct {
 	Name         string     `json:"name" binding:"required,min=1,max=200"`
-	Stage        string     `json:"stage" binding:"omitempty,oneof=lead intent trial formal closed"`
+	Stage        string     `json:"stage" binding:"omitempty,oneof=intent trial formal closed"`
 	DemandTypes  StringList `json:"demand_types"`
 	Industry     string     `json:"industry"`
 	ContactName  string     `json:"contact_name"`
@@ -107,7 +107,7 @@ type UpdateOpsCustomerReq struct {
 
 type ChangeOpsCustomerStageReq struct {
 	ID           int    `json:"id" binding:"required,min=1"`
-	Stage        string `json:"stage" binding:"required,oneof=lead intent trial formal closed"`
+	Stage        string `json:"stage" binding:"required,oneof=intent trial formal closed"`
 	ClosedReason string `json:"closed_reason"`
 }
 

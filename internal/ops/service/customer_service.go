@@ -33,8 +33,8 @@ func NewOpsCustomerService(customerDAO dao.OpsCustomerDAO, followupDAO dao.OpsFo
 
 func (s *opsCustomerService) Create(ctx context.Context, req *model.CreateOpsCustomerReq) error {
 	stage := req.Stage
-	if stage == "" {
-		stage = model.OpsCustomerStageLead
+	if stage == "" || stage == model.OpsCustomerStageLead {
+		stage = model.OpsCustomerStageIntent
 	}
 	source := req.Source
 	if source == "" {
@@ -86,7 +86,8 @@ func (s *opsCustomerService) List(ctx context.Context, req *model.ListOpsCustome
 }
 
 var allowedStageTransitions = map[string]map[string]bool{
-	model.OpsCustomerStageLead:   {model.OpsCustomerStageIntent: true, model.OpsCustomerStageClosed: true},
+	// lead 仅兼容历史数据，可升到意向/试用或闭环
+	model.OpsCustomerStageLead:   {model.OpsCustomerStageIntent: true, model.OpsCustomerStageTrial: true, model.OpsCustomerStageClosed: true},
 	model.OpsCustomerStageIntent: {model.OpsCustomerStageTrial: true, model.OpsCustomerStageFormal: true, model.OpsCustomerStageClosed: true},
 	model.OpsCustomerStageTrial:  {model.OpsCustomerStageFormal: true, model.OpsCustomerStageClosed: true},
 	model.OpsCustomerStageFormal: {model.OpsCustomerStageClosed: true},

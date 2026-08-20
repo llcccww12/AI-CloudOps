@@ -13,6 +13,7 @@ type OpsAttachmentDAO interface {
 	GetByID(ctx context.Context, id int) (*model.OpsAttachment, error)
 	ListByBiz(ctx context.Context, bizType string, bizID int) ([]*model.OpsAttachment, error)
 	CountByBiz(ctx context.Context, bizType string, bizID int) (int64, error)
+	BindBizIDs(ctx context.Context, bizType string, bizID int, ids []int) error
 	Delete(ctx context.Context, id int) error
 }
 
@@ -53,6 +54,16 @@ func (d *opsAttachmentDAO) CountByBiz(ctx context.Context, bizType string, bizID
 		Where("biz_type = ? AND biz_id = ?", bizType, bizID).
 		Count(&count).Error
 	return count, err
+}
+
+func (d *opsAttachmentDAO) BindBizIDs(ctx context.Context, bizType string, bizID int, ids []int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return d.db.WithContext(ctx).
+		Model(&model.OpsAttachment{}).
+		Where("biz_type = ? AND biz_id = 0 AND id IN ?", bizType, ids).
+		Update("biz_id", bizID).Error
 }
 
 func (d *opsAttachmentDAO) Delete(ctx context.Context, id int) error {

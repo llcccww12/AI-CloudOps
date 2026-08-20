@@ -27,6 +27,7 @@ type opsReminderService struct {
 	contractDAO   dao.OpsContractDAO
 	settlementDAO dao.OpsSettlementDAO
 	customerDAO   dao.OpsCustomerDAO
+	visitDAO      dao.OpsVisitDAO
 	inboxDAO      workorderDao.WorkorderInboxDAO
 	bizSvc        OpsBizService
 	logger        *zap.Logger
@@ -38,14 +39,15 @@ func NewOpsReminderService(
 	contractDAO dao.OpsContractDAO,
 	settlementDAO dao.OpsSettlementDAO,
 	customerDAO dao.OpsCustomerDAO,
+	visitDAO dao.OpsVisitDAO,
 	inboxDAO workorderDao.WorkorderInboxDAO,
 	bizSvc OpsBizService,
 	logger *zap.Logger,
 ) OpsReminderService {
 	return &opsReminderService{
 		ruleDAO: ruleDAO, trialDAO: trialDAO, contractDAO: contractDAO,
-		settlementDAO: settlementDAO, customerDAO: customerDAO, inboxDAO: inboxDAO,
-		bizSvc: bizSvc, logger: logger,
+		settlementDAO: settlementDAO, customerDAO: customerDAO, visitDAO: visitDAO,
+		inboxDAO: inboxDAO, bizSvc: bizSvc, logger: logger,
 	}
 }
 
@@ -125,6 +127,9 @@ func (s *opsReminderService) RunScan(ctx context.Context) (*model.OpsReminderSca
 		}
 		if err := s.pushInbox(ctx, hit.TargetUserID, title, hit.Reason, hit.Link); err == nil {
 			result.NotifyCount++
+			if hit.Scene == model.OpsReminderSceneVisitPreDue && hit.BizID > 0 {
+				_ = s.visitDAO.MarkPreDueReminded(ctx, hit.BizID)
+			}
 		}
 	}
 	return result, nil
@@ -196,6 +201,26 @@ func (s *opsReminderService) collectHits(ctx context.Context) ([]*model.OpsRemin
 					continue
 				}
 				hits = append(hits, s.buildHit(rule, "settlement", st.ID, st.Title, c, "结算单已确认，待开票"))
+			}
+		case model.OpsReminderSceneVisitPreDue:
+			days := rule.AdvanceDays
+			if days <= 0 {
+				days = model.OpsVisitPreDueDays
+			}
+			items, _ := s.visitDAO.ListPreDueRemind(ctx, days)
+			for _, v := range items {
+				dueText := ""
+				if v.DueAt != nil {
+					dueText = v.DueAt.Format("2006-01-02")
+				}
+				hits = append(hits, &model.OpsReminderHit{
+					RuleID: rule.ID, Scene: rule.Scene, RuleName: rule.Name, AdvanceDays: days,
+					TargetUserID: v.FollowOwnerID, TargetUserHint: v.FollowOwnerName,
+					BizType: "visit", BizID: v.ID, BizTitle: v.Title,
+					Link: "/ops/visits",
+					Reason: fmt.Sprintf("外访「%s」将于 %s 到期（任务下发后 %d 天内需完成），请尽快走访",
+						v.TargetOrg, dueText, model.OpsVisitAssignDays),
+				})
 			}
 		}
 	}

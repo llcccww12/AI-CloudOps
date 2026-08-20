@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>思明智算中心访客登记</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #0f4c81;
+      --primary-hover: #0c3d68;
+      --border: #e5e7eb;
+      --danger: #b91c1c;
+      --ok: #047857;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #e8f0f8 0%, var(--bg) 40%, #eef2f7 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    .hero {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+      color: var(--primary);
+      letter-spacing: 0.02em;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 18px;
+      box-shadow: 0 8px 24px rgba(15, 76, 129, 0.06);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 640px) {
+      .row { grid-template-columns: 1fr; }
+    }
+    label {
+      display: block;
+      font-size: 0.875rem;
+      margin-bottom: 6px;
+      color: #374151;
+    }
+    .req::after { content: " *"; color: var(--danger); }
+    .field { margin-bottom: 14px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: var(--text);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid rgba(15, 76, 129, 0.2);
+      border-color: var(--primary);
+    }
+    textarea { resize: vertical; min-height: 72px; }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+    .actions { margin-top: 8px; }
+    button {
+      width: 100%;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 1rem;
+      background: var(--primary);
+      color: #fff;
+      cursor: pointer;
+    }
+    button:hover { background: var(--primary-hover); }
+    button:disabled { opacity: 0.65; cursor: not-allowed; }
+    .msg {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      display: none;
+      font-size: 0.9rem;
+    }
+    .msg.error { display: block; background: #fef2f2; color: var(--danger); }
+    .msg.ok { display: block; background: #ecfdf5; color: var(--ok); }
+    .success-view { text-align: center; padding: 36px 12px; display: none; }
+    .success-view h2 { color: var(--ok); margin: 0 0 8px; }
+    .files { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+    .check-row { display: flex; align-items: center; gap: 8px; }
+    .check-row input { width: auto; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>思明智算中心访客登记</h1>
+      <p>请填写来访信息，提交后工作人员将为您安排接待</p>
+    </div>
+
+    <div id="formCard" class="card">
+      <form id="visitorForm">
+        <div class="row">
+          <div class="field">
+            <label class="req" for="visit_at">日期</label>
+            <input id="visit_at" name="visit_at" type="datetime-local" required />
+          </div>
+          <div class="field">
+            <label class="req" for="company_level">来访单位层级</label>
+            <select id="company_level" name="company_level" required>
+              <option value="">请选择</option>
+              <option>省级</option>
+              <option>市级</option>
+              <option>区县级</option>
+              <option>央企</option>
+              <option>国企</option>
+              <option>民企</option>
+              <option>高校</option>
+              <option>其他</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="req" for="company_name">来访单位名称</label>
+          <input id="company_name" name="company_name" maxlength="200" required />
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label class="req" for="visitor_name">主要领导</label>
+            <input id="visitor_name" name="visitor_name" maxlength="100" required />
+          </div>
+          <div class="field">
+            <label for="visitor_title">职务</label>
+            <input id="visitor_title" name="visitor_title" list="titleList" maxlength="100" placeholder="可输入或选择" />
+            <datalist id="titleList">
+              <option value="局长"></option>
+              <option value="处长"></option>
+              <option value="主任"></option>
+              <option value="总经理"></option>
+              <option value="副总经理"></option>
+              <option value="院长"></option>
+              <option value="教授"></option>
+              <option value="其他"></option>
+            </datalist>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label class="req" for="visitor_count">来访人数</label>
+            <input id="visitor_count" name="visitor_count" type="number" min="1" max="999" required />
+          </div>
+          <div class="field">
+            <label class="req" for="contact_phone">带队人联系电话</label>
+            <input id="contact_phone" name="contact_phone" maxlength="32" required placeholder="手机号" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="docking_unit">对接单位</label>
+            <input id="docking_unit" name="docking_unit" maxlength="200" />
+          </div>
+          <div class="field">
+            <label for="host_name">接待人员</label>
+            <input id="host_name" name="host_name" maxlength="100" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="req" for="purpose">来访目的</label>
+          <select id="purpose" name="purpose" required>
+            <option value="">请选择</option>
+            <option>产品参观</option>
+            <option>商务洽谈</option>
+            <option>技术交流</option>
+            <option>方案演示</option>
+            <option>合作签约</option>
+            <option>其他</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="req">是否会谈</label>
+          <div class="check-row">
+            <label><input type="radio" name="need_meeting" value="1" /> 是</label>
+            <label><input type="radio" name="need_meeting" value="0" checked /> 否</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="content">展厅讲解</label>
+          <textarea id="content" name="content" placeholder="讲解内容（可选）"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="meeting_minutes">会议纪要</label>
+          <textarea id="meeting_minutes" name="meeting_minutes" placeholder="可选"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="files">附件</label>
+          <input id="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.zip" />
+          <div class="hint">支持图片、PDF、Office 等常见文档，单文件大小受服务器限制</div>
+          <div id="fileList" class="files"></div>
+        </div>
+
+        <div class="actions">
+          <button id="submitBtn" type="submit">提交登记</button>
+        </div>
+        <div id="msg" class="msg"></div>
+      </form>
+    </div>
+
+    <div id="successView" class="card success-view">
+      <h2>登记成功</h2>
+      <p>感谢您的填写，工作人员已收到您的来访信息。</p>
+      <p id="successId" class="hint"></p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('visitorForm');
+    const msg = document.getElementById('msg');
+    const submitBtn = document.getElementById('submitBtn');
+    const fileInput = document.getElementById('files');
+    const fileList = document.getElementById('fileList');
+    const visitAt = document.getElementById('visit_at');
+
+    (function initNow() {
+      const d = new Date();
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      visitAt.value = d.toISOString().slice(0, 16);
+    })();
+
+    fileInput.addEventListener('change', () => {
+      const names = Array.from(fileInput.files || []).map(f => f.name);
+      fileList.textContent = names.length ? ('已选：' + names.join('、')) : '';
+    });
+
+    function showError(text) {
+      msg.className = 'msg error';
+      msg.textContent = text;
+    }
+    function clearMsg() {
+      msg.className = 'msg';
+      msg.textContent = '';
+    }
+
+    async function uploadFiles() {
+      const files = Array.from(fileInput.files || []);
+      const ids = [];
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch('/api/public/visitor/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || (data.code !== undefined && data.code !== 0 && data.code !== 200)) {
+          throw new Error(data.message || ('上传失败：' + file.name));
+        }
+        const item = data.data || data;
+        if (!item || !item.id) throw new Error('上传返回异常：' + file.name);
+        ids.push(item.id);
+      }
+      return ids;
+    }
+
+    function toISOLocal(v) {
+      if (!v) return null;
+      const d = new Date(v);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString();
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearMsg();
+      submitBtn.disabled = true;
+      submitBtn.textContent = '提交中...';
+      try {
+        const attachmentIds = await uploadFiles();
+        const payload = {
+          visit_at: toISOLocal(form.visit_at.value),
+          company_level: form.company_level.value,
+          company_name: form.company_name.value.trim(),
+          visitor_name: form.visitor_name.value.trim(),
+          visitor_title: form.visitor_title.value.trim(),
+          visitor_count: Number(form.visitor_count.value || 0),
+          docking_unit: form.docking_unit.value.trim(),
+          host_name: form.host_name.value.trim(),
+          purpose: form.purpose.value,
+          need_meeting: Number(form.need_meeting.value || 0),
+          content: form.content.value.trim(),
+          meeting_minutes: form.meeting_minutes.value.trim(),
+          contact_phone: form.contact_phone.value.trim(),
+          attachment_ids: attachmentIds,
+        };
+        const res = await fetch('/api/public/visitor/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || (data.code !== undefined && data.code !== 0 && data.code !== 200)) {
+          throw new Error(data.message || '提交失败');
+        }
+        document.getElementById('formCard').style.display = 'none';
+        document.getElementById('successView').style.display = 'block';
+        const id = (data.data && data.data.id) || '';
+        document.getElementById('successId').textContent = id ? ('登记编号：' + id) : '';
+      } catch (err) {
+        showError(err.message || '提交失败，请稍后重试');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '提交登记';
+      }
+    });
+  </script>
+</body>
+</html>

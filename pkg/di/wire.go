@@ -185,6 +185,7 @@ var ServiceSet = wire.NewSet(
 	opsService.NewOpsFinanceService,
 	opsService.NewOpsReminderService,
 	opsService.NewOpsAttachmentService,
+	opsService.NewOpsDashboardService,
 	treeService.NewTreeNodeService,
 	treeService.NewTreeLocalService,
 	treeService.NewTreeCloudService,

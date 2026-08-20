@@ -46,6 +46,7 @@ const (
 	OpsReminderSceneSettlementDue   = "settlement_due"
 	OpsReminderSceneInvoice         = "invoice"
 	OpsReminderScenePaymentFollowup = "payment_followup"
+	OpsReminderSceneVisitPreDue     = "visit_pre_due"
 )
 
 // OpsSettlement 结算单

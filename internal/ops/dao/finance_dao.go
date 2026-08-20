@@ -243,6 +243,7 @@ func (d *opsReminderRuleDAO) EnsureDefaults(ctx context.Context) error {
 		{Scene: model.OpsReminderSceneSettlementDue, Name: "结算待确认提醒", AdvanceDays: 3, Enabled: 1, Channels: model.StringList{"inbox"}},
 		{Scene: model.OpsReminderSceneInvoice, Name: "开票提醒", AdvanceDays: 0, Enabled: 1, Channels: model.StringList{"inbox"}},
 		{Scene: model.OpsReminderScenePaymentFollowup, Name: "收款跟进提醒", AdvanceDays: 5, Enabled: 1, Channels: model.StringList{"inbox"}},
+		{Scene: model.OpsReminderSceneVisitPreDue, Name: "外访到期前提醒", AdvanceDays: model.OpsVisitPreDueDays, Enabled: 1, Channels: model.StringList{"inbox"}},
 	}
 	for _, item := range defaults {
 		var count int64

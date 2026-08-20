@@ -44,6 +44,9 @@ var skipAuthPaths = map[string]bool{
 	"/api/user/codes":                  true,
 	"/api/not_auth/getBindIps":         true,
 	"/api/not_auth/getTreeNodeBindIps": true,
+	"/api/public/visitor/submit":       true,
+	"/api/public/visitor/upload":       true,
+	"/public/visitor":                  true,
 	"/favicon.ico":                     true,
 }
 
@@ -51,6 +54,7 @@ var skipAuthPaths = map[string]bool{
 var skipPrefixes = []string{
 	"/api/ai/chat/ws",
 	"/api/tree/local/terminal",
+	"/public/",
 }
 
 // 登录后即可访问、不再走角色 API 授权的前缀（仅本人数据）

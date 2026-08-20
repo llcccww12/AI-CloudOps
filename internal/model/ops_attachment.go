@@ -28,6 +28,7 @@ package model
 const (
 	OpsAttachmentBizContract   = "contract"
 	OpsAttachmentBizSettlement = "settlement"
+	OpsAttachmentBizExhibition = "exhibition"
 )
 
 // OpsAttachment 运营业务附件（合同/结算等）
@@ -46,6 +47,6 @@ type OpsAttachment struct {
 func (OpsAttachment) TableName() string { return "cl_ops_attachment" }
 
 type ListOpsAttachmentReq struct {
-	BizType string `json:"biz_type" form:"biz_type" binding:"required,oneof=contract settlement"`
+	BizType string `json:"biz_type" form:"biz_type" binding:"required,oneof=contract settlement exhibition"`
 	BizID   int    `json:"biz_id" form:"biz_id" binding:"required,min=1"`
 }

@@ -145,7 +145,11 @@ func (s *opsBizService) applyIntentNode(ctx context.Context, customerID int, pay
 	}); err != nil {
 		return fmt.Errorf("写入跟进记录失败: %w", err)
 	}
-	_ = s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageIntent, "")
+	// 外访转入即为意向；发起全流程后进入试用。意向节点只补历史线索→意向，不回退阶段。
+	if c, err := s.customerDAO.GetByID(ctx, customerID); err == nil && c != nil &&
+		(c.Stage == "" || c.Stage == model.OpsCustomerStageLead) {
+		_ = s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageIntent, "")
+	}
 	return nil
 }
 
@@ -206,6 +210,8 @@ func (s *opsBizService) applyTrialAcceptNode(ctx context.Context, customerID int
 		return fmt.Errorf("更新试用验收失败: %w", err)
 	}
 	_ = s.trialDAO.UpdateStatus(ctx, trial.ID, model.OpsTrialStatusEnded)
+	// 试用验收/转正评估通过后进入正式阶段
+	_ = s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageFormal, "")
 	return nil
 }
 

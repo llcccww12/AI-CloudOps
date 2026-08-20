@@ -371,16 +371,20 @@ func (s *opsBizService) StartCustomerLifecycle(ctx context.Context, customerID, 
 		return nil, fmt.Errorf("该客户已绑定运营全流程工单（工单ID=%d，状态：%s），一个客户项目仅允许一个工单，请直接查看进度", existing.WorkorderInstanceID, existing.Status)
 	}
 	title := fmt.Sprintf("运营全流程-%s-%d-%d", customer.Name, customer.ID, time.Now().Unix())
+	stageForForm := customer.Stage
+	if stageForForm != model.OpsCustomerStageFormal && stageForForm != model.OpsCustomerStageClosed {
+		stageForForm = model.OpsCustomerStageTrial
+	}
 	req := &model.CreateWorkorderInstanceFromTemplateReq{
 		Title: title,
-		Description: fmt.Sprintf("客户「%s」从意向/试用到正式合同与回款的运营全流程", customer.Name),
+		Description: fmt.Sprintf("客户「%s」从试用到正式合同与回款的运营全流程", customer.Name),
 		Priority: model.PriorityNormal,
 		FormData: model.JSONMap{
 			"ops_biz_type":   model.OpsApprovalBizCustomerLifecycle,
 			"ops_biz_id":     customer.ID,
 			"customer_id":    customer.ID,
 			"customer_name":  customer.Name,
-			"customer_stage": customer.Stage,
+			"customer_stage": stageForForm,
 			"owner_name":     customer.OwnerName,
 			"contact_name":   customer.ContactName,
 			"contact_phone":  customer.ContactPhone,
@@ -398,6 +402,14 @@ func (s *opsBizService) StartCustomerLifecycle(ctx context.Context, customerID, 
 	if err := s.instanceSvc.SubmitInstance(ctx, instanceID, operatorID, operatorName); err != nil {
 		s.logger.Warn("运营全流程工单已创建但自动提交失败，可在工单中心手动提交",
 			zap.Int("instanceID", instanceID), zap.Error(err))
+	}
+	// 发起全流程后客户进入试用阶段（正式/闭环不回退）
+	if customer.Stage != model.OpsCustomerStageFormal && customer.Stage != model.OpsCustomerStageClosed {
+		if err := s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageTrial, ""); err != nil {
+			s.logger.Warn("发起全流程后更新客户试用阶段失败", zap.Int("customerID", customerID), zap.Error(err))
+		} else {
+			customer.Stage = model.OpsCustomerStageTrial
+		}
 	}
 	return &model.OpsCustomerLifecycleWorkorder{
 		CustomerID:          customerID,

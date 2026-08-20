@@ -19,6 +19,7 @@ type OpsHandler struct {
 	financeSvc    service.OpsFinanceService
 	reminderSvc   service.OpsReminderService
 	attachmentSvc service.OpsAttachmentService
+	dashboardSvc  service.OpsDashboardService
 }
 
 func NewOpsHandler(
@@ -28,16 +29,22 @@ func NewOpsHandler(
 	financeSvc service.OpsFinanceService,
 	reminderSvc service.OpsReminderService,
 	attachmentSvc service.OpsAttachmentService,
+	dashboardSvc service.OpsDashboardService,
 ) *OpsHandler {
 	return &OpsHandler{
 		customerSvc: customerSvc, leadSvc: leadSvc, bizSvc: bizSvc,
 		financeSvc: financeSvc, reminderSvc: reminderSvc, attachmentSvc: attachmentSvc,
+		dashboardSvc: dashboardSvc,
 	}
 }
 
 func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
+	h.registerPublicVisitorRoutes(server)
+
 	g := server.Group("/api/ops")
 	{
+		g.GET("/dashboard/overview", h.GetDashboardOverview)
+
 		g.POST("/customer/create", h.CreateCustomer)
 		g.PUT("/customer/update/:id", h.UpdateCustomer)
 		g.DELETE("/customer/delete/:id", h.DeleteCustomer)
@@ -118,6 +125,13 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 
 func userClaims(ctx *gin.Context) jwt.UserClaims {
 	return ctx.MustGet("user").(jwt.UserClaims)
+}
+
+func (h *OpsHandler) GetDashboardOverview(ctx *gin.Context) {
+	var req model.OpsDashboardOverviewReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.dashboardSvc.Overview(ctx.Request.Context(), &req)
+	})
 }
 
 func (h *OpsHandler) CreateCustomer(ctx *gin.Context) {
@@ -229,7 +243,7 @@ func (h *OpsHandler) CreateExhibition(ctx *gin.Context) {
 	u := userClaims(ctx)
 	base.HandleRequest(ctx, &req, func() (any, error) {
 		req.OperatorID, req.OperatorName = u.Uid, u.Username
-		return nil, h.leadSvc.CreateExhibition(ctx.Request.Context(), &req)
+		return h.leadSvc.CreateExhibition(ctx.Request.Context(), &req)
 	})
 }
 func (h *OpsHandler) UpdateExhibition(ctx *gin.Context) {
@@ -238,9 +252,11 @@ func (h *OpsHandler) UpdateExhibition(ctx *gin.Context) {
 	if err != nil {
 		return
 	}
+	u := userClaims(ctx)
 	req.ID = id
 	base.HandleRequest(ctx, &req, func() (any, error) {
-		return nil, h.leadSvc.UpdateExhibition(ctx.Request.Context(), &req)
+		req.UpdaterID, req.UpdaterName = u.Uid, u.Username
+		return h.leadSvc.UpdateExhibition(ctx.Request.Context(), &req)
 	})
 }
 func (h *OpsHandler) DeleteExhibition(ctx *gin.Context) {
@@ -272,7 +288,7 @@ func (h *OpsHandler) ConvertExhibition(ctx *gin.Context) {
 	u := userClaims(ctx)
 	base.HandleRequest(ctx, &req, func() (any, error) {
 		req.OperatorID, req.OperatorName = u.Uid, u.Username
-		return h.leadSvc.ConvertExhibition(ctx.Request.Context(), &req)
+		return h.leadSvc.TransferExhibitionToVisit(ctx.Request.Context(), &req)
 	})
 }
 
@@ -290,8 +306,10 @@ func (h *OpsHandler) UpdateVisit(ctx *gin.Context) {
 	if err != nil {
 		return
 	}
+	u := userClaims(ctx)
 	req.ID = id
 	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.UpdaterID, req.UpdaterName = u.Uid, u.Username
 		return nil, h.leadSvc.UpdateVisit(ctx.Request.Context(), &req)
 	})
 }

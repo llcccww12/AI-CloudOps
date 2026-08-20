@@ -12,6 +12,7 @@ func TestAllowedStageTransitions(t *testing.T) {
 		ok       bool
 	}{
 		{model.OpsCustomerStageLead, model.OpsCustomerStageIntent, true},
+		{model.OpsCustomerStageLead, model.OpsCustomerStageTrial, true},
 		{model.OpsCustomerStageLead, model.OpsCustomerStageFormal, false},
 		{model.OpsCustomerStageIntent, model.OpsCustomerStageTrial, true},
 		{model.OpsCustomerStageTrial, model.OpsCustomerStageFormal, true},

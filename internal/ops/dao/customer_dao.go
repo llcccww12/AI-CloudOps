@@ -3,6 +3,7 @@ package dao
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"go.uber.org/zap"
@@ -16,6 +17,9 @@ type OpsCustomerDAO interface {
 	GetByID(ctx context.Context, id int) (*model.OpsCustomer, error)
 	List(ctx context.Context, req *model.ListOpsCustomerReq) ([]*model.OpsCustomer, int64, error)
 	UpdateStage(ctx context.Context, id int, stage, closedReason string) error
+	CountByStage(ctx context.Context, stage string) (int64, error)
+	CountClosedBetween(ctx context.Context, start, end time.Time) (int64, error)
+	ListRecentByStages(ctx context.Context, stages []string, limit int) ([]*model.OpsCustomer, error)
 }
 
 type opsCustomerDAO struct {
@@ -123,6 +127,40 @@ func (d *opsCustomerDAO) UpdateStage(ctx context.Context, id int, stage, closedR
 		return fmt.Errorf("客户不存在")
 	}
 	return nil
+}
+
+func (d *opsCustomerDAO) CountByStage(ctx context.Context, stage string) (int64, error) {
+	var n int64
+	q := d.db.WithContext(ctx).Model(&model.OpsCustomer{})
+	if stage == model.OpsCustomerStageIntent {
+		q = q.Where("stage IN ?", []string{model.OpsCustomerStageIntent, model.OpsCustomerStageLead})
+	} else {
+		q = q.Where("stage = ?", stage)
+	}
+	err := q.Count(&n).Error
+	return n, err
+}
+
+func (d *opsCustomerDAO) CountClosedBetween(ctx context.Context, start, end time.Time) (int64, error) {
+	var n int64
+	err := d.db.WithContext(ctx).Model(&model.OpsCustomer{}).
+		Where("stage = ?", model.OpsCustomerStageClosed).
+		Where("updated_at >= ? AND updated_at < ?", start, end).
+		Count(&n).Error
+	return n, err
+}
+
+func (d *opsCustomerDAO) ListRecentByStages(ctx context.Context, stages []string, limit int) ([]*model.OpsCustomer, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var items []*model.OpsCustomer
+	q := d.db.WithContext(ctx).Model(&model.OpsCustomer{})
+	if len(stages) > 0 {
+		q = q.Where("stage IN ?", stages)
+	}
+	err := q.Order("updated_at DESC").Limit(limit).Find(&items).Error
+	return items, err
 }
 
 type OpsFollowupDAO interface {
