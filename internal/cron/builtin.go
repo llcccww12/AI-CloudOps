@@ -81,6 +81,13 @@ func GetBuiltinTasks() []BuiltinTaskDefinition {
 			TaskType:    "ops_reminder_scan",
 			Enabled:     true,
 		},
+		{
+			Name:        "运营月结算草稿生成",
+			Description: "按正式合同计费周期自动生成当月结算/发票草稿",
+			Schedule:    "10 1 1 * *", // 每月 1 日 01:10
+			TaskType:    "ops_monthly_billing",
+			Enabled:     true,
+		},
 	}
 }
 

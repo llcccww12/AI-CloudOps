@@ -56,12 +56,25 @@ type WorkorderConfig struct {
 
 // OpsConfig 运营管理配置
 type OpsConfig struct {
-	TrialWorkorderTemplateID      int    `mapstructure:"trial_workorder_template_id" env:"OPS_TRIAL_WORKORDER_TEMPLATE_ID" default:"0"`
-	ActivationWorkorderTemplateID int    `mapstructure:"activation_workorder_template_id" env:"OPS_ACTIVATION_WORKORDER_TEMPLATE_ID" default:"0"`
-	LifecycleWorkorderTemplateID  int    `mapstructure:"lifecycle_workorder_template_id" env:"OPS_LIFECYCLE_WORKORDER_TEMPLATE_ID" default:"0"`
-	AttachmentDir                 string `mapstructure:"attachment_dir" env:"OPS_ATTACHMENT_DIR" default:"./data/ops/attachments"`
-	AttachmentMaxSizeMB           int    `mapstructure:"attachment_max_size_mb" env:"OPS_ATTACHMENT_MAX_SIZE_MB" default:"20"`
-	AttachmentMaxCount            int    `mapstructure:"attachment_max_count" env:"OPS_ATTACHMENT_MAX_COUNT" default:"20"`
+	TrialWorkorderTemplateID      int          `mapstructure:"trial_workorder_template_id" env:"OPS_TRIAL_WORKORDER_TEMPLATE_ID" default:"0"`
+	ActivationWorkorderTemplateID int          `mapstructure:"activation_workorder_template_id" env:"OPS_ACTIVATION_WORKORDER_TEMPLATE_ID" default:"0"`
+	LifecycleWorkorderTemplateID  int          `mapstructure:"lifecycle_workorder_template_id" env:"OPS_LIFECYCLE_WORKORDER_TEMPLATE_ID" default:"0"`
+	AttachmentDir                 string       `mapstructure:"attachment_dir" env:"OPS_ATTACHMENT_DIR" default:"./data/ops/attachments"`
+	AttachmentMaxSizeMB           int          `mapstructure:"attachment_max_size_mb" env:"OPS_ATTACHMENT_MAX_SIZE_MB" default:"20"`
+	AttachmentMaxCount            int          `mapstructure:"attachment_max_count" env:"OPS_ATTACHMENT_MAX_COUNT" default:"20"`
+	SMS                           OpsSMSConfig `mapstructure:"sms"`
+	VendorProfileURL              string       `mapstructure:"vendor_profile_url" env:"OPS_VENDOR_PROFILE_URL" default:""`
+	PublicBaseURL                 string       `mapstructure:"public_base_url" env:"OPS_PUBLIC_BASE_URL" default:""`
+}
+
+// OpsSMSConfig 运营提醒短信（阿里云）
+type OpsSMSConfig struct {
+	Enabled         bool   `mapstructure:"enabled" env:"OPS_SMS_ENABLED" default:"false"`
+	AccessKeyID     string `mapstructure:"access_key_id" env:"OPS_SMS_ACCESS_KEY_ID" default:""`
+	AccessKeySecret string `mapstructure:"access_key_secret" env:"OPS_SMS_ACCESS_KEY_SECRET" default:""`
+	SignName        string `mapstructure:"sign_name" env:"OPS_SMS_SIGN_NAME" default:""`
+	TemplateCode    string `mapstructure:"template_code" env:"OPS_SMS_TEMPLATE_CODE" default:""`
+	Endpoint        string `mapstructure:"endpoint" env:"OPS_SMS_ENDPOINT" default:"https://dysmsapi.aliyuncs.com/"`
 }
 
 func (c *Config) Validate() error {

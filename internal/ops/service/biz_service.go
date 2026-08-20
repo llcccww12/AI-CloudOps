@@ -30,6 +30,7 @@ type OpsBizService interface {
 
 	CreateActivation(ctx context.Context, req *model.CreateOpsActivationReq) error
 	UpdateActivation(ctx context.Context, req *model.UpdateOpsActivationReq) error
+	FeedbackActivation(ctx context.Context, req *model.FeedbackOpsActivationReq) error
 	DeleteActivation(ctx context.Context, id int) error
 	GetActivation(ctx context.Context, id int) (*model.OpsActivation, error)
 	ListActivation(ctx context.Context, req *model.ListOpsActivationReq) (*model.ListResp[*model.OpsActivation], error)
@@ -42,6 +43,10 @@ type OpsBizService interface {
 
 	OnWorkorderTerminal(ctx context.Context, instanceID int, status int8) error
 	SyncPendingApprovals(ctx context.Context) error
+
+	ListContractItems(ctx context.Context, contractID int) (*model.ListResp[*model.OpsContractItem], error)
+	CreateContractItem(ctx context.Context, req *model.CreateOpsContractItemReq) error
+	DeleteContractItem(ctx context.Context, id int) error
 }
 
 type opsBizService struct {
@@ -54,6 +59,7 @@ type opsBizService struct {
 	settlementDAO dao.OpsSettlementDAO
 	invoiceDAO    dao.OpsInvoiceDAO
 	paymentDAO    dao.OpsPaymentDAO
+	itemDAO       dao.OpsContractItemDAO
 	processDao    workorderDao.WorkorderProcessDAO
 	instanceSvc   workorderService.InstanceService
 	logger        *zap.Logger
@@ -69,6 +75,7 @@ func NewOpsBizService(
 	settlementDAO dao.OpsSettlementDAO,
 	invoiceDAO dao.OpsInvoiceDAO,
 	paymentDAO dao.OpsPaymentDAO,
+	itemDAO dao.OpsContractItemDAO,
 	processDao workorderDao.WorkorderProcessDAO,
 	instanceSvc workorderService.InstanceService,
 	logger *zap.Logger,
@@ -77,7 +84,7 @@ func NewOpsBizService(
 		trialDAO: trialDAO, contractDAO: contractDAO, activationDAO: activationDAO,
 		approvalDAO: approvalDAO, customerDAO: customerDAO, followupDAO: followupDAO,
 		settlementDAO: settlementDAO, invoiceDAO: invoiceDAO, paymentDAO: paymentDAO,
-		processDao: processDao, instanceSvc: instanceSvc, logger: logger,
+		itemDAO: itemDAO, processDao: processDao, instanceSvc: instanceSvc, logger: logger,
 	}
 }
 
@@ -234,8 +241,8 @@ func (s *opsBizService) CreateContract(ctx context.Context, req *model.CreateOps
 	}
 	return s.contractDAO.Create(ctx, &model.OpsContract{
 		CustomerID: req.CustomerID, TrialID: req.TrialID, Type: req.Type, Title: strings.TrimSpace(req.Title),
-		BillingMode: req.BillingMode, UnitPrice: req.UnitPrice, BillingCycle: req.BillingCycle,
-		PaymentTermDays: term, StartAt: req.StartAt, EndAt: req.EndAt, AutoRenew: autoRenew,
+		ProductType: req.ProductType, BillingMode: req.BillingMode, UnitPrice: req.UnitPrice, BillingCycle: req.BillingCycle,
+		PaymentMethod: req.PaymentMethod, PaymentTermDays: term, StartAt: req.StartAt, EndAt: req.EndAt, AutoRenew: autoRenew,
 		Status: model.OpsContractStatusDraft, Remark: req.Remark,
 		OperatorID: req.OperatorID, OperatorName: req.OperatorName,
 	})
@@ -247,8 +254,10 @@ func (s *opsBizService) UpdateContract(ctx context.Context, req *model.UpdateOps
 		status = model.OpsContractStatusDraft
 	}
 	return s.contractDAO.Update(ctx, &model.OpsContract{
-		Model: model.Model{ID: req.ID}, Title: strings.TrimSpace(req.Title), BillingMode: req.BillingMode,
-		UnitPrice: req.UnitPrice, BillingCycle: req.BillingCycle, PaymentTermDays: req.PaymentTermDays,
+		Model: model.Model{ID: req.ID}, Title: strings.TrimSpace(req.Title),
+		ProductType: req.ProductType, BillingMode: req.BillingMode,
+		UnitPrice: req.UnitPrice, BillingCycle: req.BillingCycle, PaymentMethod: req.PaymentMethod,
+		PaymentTermDays: req.PaymentTermDays,
 		StartAt: req.StartAt, EndAt: req.EndAt, AutoRenew: req.AutoRenew, Status: status, Remark: req.Remark,
 	})
 }
@@ -284,7 +293,27 @@ func (s *opsBizService) UpdateActivation(ctx context.Context, req *model.UpdateO
 	return s.activationDAO.Update(ctx, &model.OpsActivation{
 		Model: model.Model{ID: req.ID}, Title: strings.TrimSpace(req.Title),
 		ResourceSummary: req.ResourceSummary, Purpose: req.Purpose,
+		FeedbackAccount: req.FeedbackAccount, FeedbackTenant: req.FeedbackTenant,
+		FeedbackEndpoint: req.FeedbackEndpoint, FeedbackRemark: req.FeedbackRemark,
 	})
+}
+
+func (s *opsBizService) FeedbackActivation(ctx context.Context, req *model.FeedbackOpsActivationReq) error {
+	act, err := s.activationDAO.GetByID(ctx, req.ID)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	act.FeedbackAccount = strings.TrimSpace(req.FeedbackAccount)
+	act.FeedbackTenant = strings.TrimSpace(req.FeedbackTenant)
+	act.FeedbackEndpoint = strings.TrimSpace(req.FeedbackEndpoint)
+	act.FeedbackRemark = strings.TrimSpace(req.FeedbackRemark)
+	act.Status = model.OpsActivationStatusActive
+	act.ActivatedAt = &now
+	if err := s.activationDAO.Update(ctx, act); err != nil {
+		return err
+	}
+	return s.activationDAO.UpdateStatus(ctx, act.ID, model.OpsActivationStatusActive)
 }
 func (s *opsBizService) DeleteActivation(ctx context.Context, id int) error {
 	return s.activationDAO.Delete(ctx, id)
@@ -537,4 +566,41 @@ func (s *opsBizService) OnWorkorderTerminal(ctx context.Context, instanceID int,
 		}
 	}
 	return nil
+}
+
+func (s *opsBizService) ListContractItems(ctx context.Context, contractID int) (*model.ListResp[*model.OpsContractItem], error) {
+	if s.itemDAO == nil {
+		return &model.ListResp[*model.OpsContractItem]{}, nil
+	}
+	items, err := s.itemDAO.ListByContract(ctx, contractID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.ListResp[*model.OpsContractItem]{Items: items, Total: int64(len(items))}, nil
+}
+
+func (s *opsBizService) CreateContractItem(ctx context.Context, req *model.CreateOpsContractItemReq) error {
+	if _, err := s.contractDAO.GetByID(ctx, req.ContractID); err != nil {
+		return err
+	}
+	itemType := req.ItemType
+	if itemType == "" {
+		itemType = model.OpsContractItemTypeAddOn
+	}
+	qty := req.Quantity
+	if qty <= 0 {
+		qty = 1
+	}
+	amount := req.Amount
+	if amount <= 0 {
+		amount = qty * req.UnitPrice
+	}
+	return s.itemDAO.Create(ctx, &model.OpsContractItem{
+		ContractID: req.ContractID, ItemType: itemType, Name: strings.TrimSpace(req.Name),
+		ProductType: req.ProductType, Quantity: qty, UnitPrice: req.UnitPrice, Amount: amount, Remark: req.Remark,
+	})
+}
+
+func (s *opsBizService) DeleteContractItem(ctx context.Context, id int) error {
+	return s.itemDAO.Delete(ctx, id)
 }

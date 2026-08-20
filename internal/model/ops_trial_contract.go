@@ -118,9 +118,11 @@ type OpsContract struct {
 	TrialID        *int       `json:"trial_id" gorm:"column:trial_id;index;comment:关联试用"`
 	Type           string     `json:"type" gorm:"column:type;type:varchar(32);not null;index;comment:合同类型"`
 	Title          string     `json:"title" gorm:"column:title;type:varchar(200);not null;comment:合同标题"`
+	ProductType    string     `json:"product_type" gorm:"column:product_type;type:varchar(64);index;comment:算力产品类型"`
 	BillingMode    string     `json:"billing_mode" gorm:"column:billing_mode;type:varchar(64);comment:计费模式"`
 	UnitPrice      float64    `json:"unit_price" gorm:"column:unit_price;type:decimal(14,2);comment:单价"`
 	BillingCycle   string     `json:"billing_cycle" gorm:"column:billing_cycle;type:varchar(32);comment:计费周期"`
+	PaymentMethod  string     `json:"payment_method" gorm:"column:payment_method;type:varchar(64);comment:付费方式"`
 	PaymentTermDays int       `json:"payment_term_days" gorm:"column:payment_term_days;default:30;comment:账期天数"`
 	StartAt        *time.Time `json:"start_at" gorm:"column:start_at;index;comment:开始"`
 	EndAt          *time.Time `json:"end_at" gorm:"column:end_at;index;comment:结束"`
@@ -138,9 +140,11 @@ type CreateOpsContractReq struct {
 	TrialID         *int       `json:"trial_id"`
 	Type            string     `json:"type" binding:"required,oneof=trial formal"`
 	Title           string     `json:"title" binding:"required,min=1,max=200"`
+	ProductType     string     `json:"product_type"`
 	BillingMode     string     `json:"billing_mode"`
 	UnitPrice       float64    `json:"unit_price"`
 	BillingCycle    string     `json:"billing_cycle"`
+	PaymentMethod   string     `json:"payment_method"`
 	PaymentTermDays int        `json:"payment_term_days"`
 	StartAt         *time.Time `json:"start_at"`
 	EndAt           *time.Time `json:"end_at"`
@@ -153,9 +157,11 @@ type CreateOpsContractReq struct {
 type UpdateOpsContractReq struct {
 	ID              int        `json:"id" binding:"required,min=1"`
 	Title           string     `json:"title" binding:"required,min=1,max=200"`
+	ProductType     string     `json:"product_type"`
 	BillingMode     string     `json:"billing_mode"`
 	UnitPrice       float64    `json:"unit_price"`
 	BillingCycle    string     `json:"billing_cycle"`
+	PaymentMethod   string     `json:"payment_method"`
 	PaymentTermDays int        `json:"payment_term_days"`
 	StartAt         *time.Time `json:"start_at"`
 	EndAt           *time.Time `json:"end_at"`
@@ -171,16 +177,20 @@ type ListOpsContractReq struct {
 	Status     string `json:"status" form:"status"`
 }
 
-// OpsActivation 开通单
+// OpsActivation 开通单（申请字段 + 回馈账号字段）
 type OpsActivation struct {
 	Model
-	CustomerID     int        `json:"customer_id" gorm:"column:customer_id;not null;index;comment:客户ID"`
-	ContractID     int        `json:"contract_id" gorm:"column:contract_id;not null;index;comment:合同ID"`
-	Title          string     `json:"title" gorm:"column:title;type:varchar(200);not null;comment:标题"`
-	ResourceSummary string    `json:"resource_summary" gorm:"column:resource_summary;type:text;comment:资源摘要"`
-	Purpose        string     `json:"purpose" gorm:"column:purpose;type:text;comment:用途"`
-	Status         string     `json:"status" gorm:"column:status;type:varchar(32);not null;default:draft;index;comment:状态"`
-	ActivatedAt    *time.Time `json:"activated_at" gorm:"column:activated_at;comment:开通时间"`
+	CustomerID      int        `json:"customer_id" gorm:"column:customer_id;not null;index;comment:客户ID"`
+	ContractID      int        `json:"contract_id" gorm:"column:contract_id;not null;index;comment:合同ID"`
+	Title           string     `json:"title" gorm:"column:title;type:varchar(200);not null;comment:标题"`
+	ResourceSummary string     `json:"resource_summary" gorm:"column:resource_summary;type:text;comment:资源摘要"`
+	Purpose         string     `json:"purpose" gorm:"column:purpose;type:text;comment:用途"`
+	FeedbackAccount string     `json:"feedback_account" gorm:"column:feedback_account;type:varchar(200);comment:开通账号"`
+	FeedbackTenant  string     `json:"feedback_tenant" gorm:"column:feedback_tenant;type:varchar(200);comment:租户/项目"`
+	FeedbackEndpoint string    `json:"feedback_endpoint" gorm:"column:feedback_endpoint;type:varchar(500);comment:访问入口"`
+	FeedbackRemark  string     `json:"feedback_remark" gorm:"column:feedback_remark;type:text;comment:开通回馈说明"`
+	Status          string     `json:"status" gorm:"column:status;type:varchar(32);not null;default:draft;index;comment:状态"`
+	ActivatedAt     *time.Time `json:"activated_at" gorm:"column:activated_at;comment:开通时间"`
 	OperatorID          int    `json:"operator_id" gorm:"column:operator_id;index;comment:操作人ID"`
 	OperatorName        string `json:"operator_name" gorm:"column:operator_name;type:varchar(100);comment:操作人"`
 	WorkorderInstanceID int    `json:"workorder_instance_id,omitempty" gorm:"-"`
@@ -199,10 +209,22 @@ type CreateOpsActivationReq struct {
 }
 
 type UpdateOpsActivationReq struct {
-	ID              int    `json:"id" binding:"required,min=1"`
-	Title           string `json:"title" binding:"required,min=1,max=200"`
-	ResourceSummary string `json:"resource_summary"`
-	Purpose         string `json:"purpose"`
+	ID               int    `json:"id" binding:"required,min=1"`
+	Title            string `json:"title" binding:"required,min=1,max=200"`
+	ResourceSummary  string `json:"resource_summary"`
+	Purpose          string `json:"purpose"`
+	FeedbackAccount  string `json:"feedback_account"`
+	FeedbackTenant   string `json:"feedback_tenant"`
+	FeedbackEndpoint string `json:"feedback_endpoint"`
+	FeedbackRemark   string `json:"feedback_remark"`
+}
+
+type FeedbackOpsActivationReq struct {
+	ID               int    `json:"id" binding:"required,min=1"`
+	FeedbackAccount  string `json:"feedback_account" binding:"required,min=1,max=200"`
+	FeedbackTenant   string `json:"feedback_tenant"`
+	FeedbackEndpoint string `json:"feedback_endpoint"`
+	FeedbackRemark   string `json:"feedback_remark"`
 }
 
 type ListOpsActivationReq struct {

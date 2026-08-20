@@ -38,6 +38,16 @@ ops:
   attachment_dir: "./data/ops/attachments"
   attachment_max_size_mb: 20
   attachment_max_count: 20
+  vendor_profile_url: "https://www.kdocs.cn/office/w/cgKlFKho02Cg"
+  # 对外问卷/访客页完整域名（含协议），留空则默认 http://127.0.0.1:{server.port}
+  public_base_url: ""
+  sms:
+    enabled: false
+    access_key_id: ""
+    access_key_secret: ""
+    sign_name: ""
+    template_code: ""
+    endpoint: "https://dysmsapi.aliyuncs.com/"
 notification:
   # 邮箱配置
   email:

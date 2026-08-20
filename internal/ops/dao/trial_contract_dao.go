@@ -96,8 +96,8 @@ func (d *opsContractDAO) Create(ctx context.Context, c *model.OpsContract) error
 }
 func (d *opsContractDAO) Update(ctx context.Context, c *model.OpsContract) error {
 	return d.db.WithContext(ctx).Model(&model.OpsContract{}).Where("id = ?", c.ID).Updates(map[string]interface{}{
-		"title": c.Title, "billing_mode": c.BillingMode, "unit_price": c.UnitPrice,
-		"billing_cycle": c.BillingCycle, "payment_term_days": c.PaymentTermDays,
+		"title": c.Title, "product_type": c.ProductType, "billing_mode": c.BillingMode, "unit_price": c.UnitPrice,
+		"billing_cycle": c.BillingCycle, "payment_method": c.PaymentMethod, "payment_term_days": c.PaymentTermDays,
 		"start_at": c.StartAt, "end_at": c.EndAt, "auto_renew": c.AutoRenew,
 		"status": c.Status, "remark": c.Remark,
 	}).Error
@@ -166,6 +166,9 @@ func (d *opsActivationDAO) Create(ctx context.Context, a *model.OpsActivation) e
 func (d *opsActivationDAO) Update(ctx context.Context, a *model.OpsActivation) error {
 	return d.db.WithContext(ctx).Model(&model.OpsActivation{}).Where("id = ?", a.ID).Updates(map[string]interface{}{
 		"title": a.Title, "resource_summary": a.ResourceSummary, "purpose": a.Purpose,
+		"feedback_account": a.FeedbackAccount, "feedback_tenant": a.FeedbackTenant,
+		"feedback_endpoint": a.FeedbackEndpoint, "feedback_remark": a.FeedbackRemark,
+		"activated_at": a.ActivatedAt, "status": a.Status,
 	}).Error
 }
 func (d *opsActivationDAO) Delete(ctx context.Context, id int) error {

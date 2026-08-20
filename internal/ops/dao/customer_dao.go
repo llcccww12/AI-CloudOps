@@ -52,6 +52,7 @@ func (d *opsCustomerDAO) Update(ctx context.Context, c *model.OpsCustomer) error
 		"budget_range":   c.BudgetRange,
 		"next_follow_at": c.NextFollowAt,
 		"remark":         c.Remark,
+		"vendor_profile_done": c.VendorProfileDone,
 	})
 	if result.Error != nil {
 		return fmt.Errorf("更新客户失败: %w", result.Error)

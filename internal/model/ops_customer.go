@@ -63,6 +63,7 @@ type OpsCustomer struct {
 	BudgetRange    string     `json:"budget_range" gorm:"column:budget_range;type:varchar(100);comment:预算区间"`
 	NextFollowAt   *time.Time `json:"next_follow_at" gorm:"column:next_follow_at;index;comment:下次跟进时间"`
 	ClosedReason   string     `json:"closed_reason" gorm:"column:closed_reason;type:varchar(100);comment:闭环原因"`
+	VendorProfileDone int8    `json:"vendor_profile_done" gorm:"column:vendor_profile_done;default:2;comment:智慧思明档案已录入1是2否"`
 	Remark         string     `json:"remark" gorm:"column:remark;type:text;comment:备注"`
 	OperatorID     int        `json:"operator_id" gorm:"column:operator_id;comment:创建人ID"`
 	OperatorName   string     `json:"operator_name" gorm:"column:operator_name;type:varchar(100);comment:创建人"`
@@ -103,6 +104,7 @@ type UpdateOpsCustomerReq struct {
 	BudgetRange  string     `json:"budget_range"`
 	NextFollowAt *time.Time `json:"next_follow_at"`
 	Remark       string     `json:"remark"`
+	VendorProfileDone int8  `json:"vendor_profile_done"`
 }
 
 type ChangeOpsCustomerStageReq struct {

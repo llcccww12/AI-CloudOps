@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>CacOps 客户问卷</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #0f4c81;
+      --border: #e5e7eb;
+      --danger: #b91c1c;
+      --ok: #047857;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #e8f0f8 0%, var(--bg) 40%, #eef2f7 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    .hero { text-align: center; margin-bottom: 18px; }
+    .hero h1 { margin: 0 0 8px; font-size: 1.45rem; color: var(--primary); }
+    .hero p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 18px;
+      box-shadow: 0 8px 24px rgba(15, 76, 129, 0.06);
+    }
+    .meta { color: var(--muted); font-size: 0.875rem; margin-bottom: 16px; }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 0.875rem; margin-bottom: 6px; color: #374151; }
+    .req::after { content: " *"; color: var(--danger); }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: var(--text);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid rgba(15, 76, 129, 0.2);
+      border-color: var(--primary);
+    }
+    .score-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .score-row button {
+      flex: 1;
+      min-width: 48px;
+      padding: 10px 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .score-row button.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .btn {
+      width: 100%;
+      margin-top: 8px;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .msg { margin-top: 12px; font-size: 0.9rem; }
+    .msg.err { color: var(--danger); }
+    .msg.ok { color: var(--ok); }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1 id="title">客户问卷</h1>
+      <p id="subtitle">请根据实际使用情况填写，提交后无需登录</p>
+    </div>
+    <div class="card" id="formCard">
+      <div class="meta" id="meta"></div>
+      <div id="fields"></div>
+      <button class="btn" id="submitBtn" type="button">提交问卷</button>
+      <div class="msg" id="msg"></div>
+    </div>
+    <div class="card hidden" id="doneCard">
+      <p class="msg ok" style="margin:0">感谢您的反馈，问卷已提交成功。</p>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = (params.get('token') || '').trim();
+    const fieldsEl = document.getElementById('fields');
+    const msgEl = document.getElementById('msg');
+    const submitBtn = document.getElementById('submitBtn');
+    let scoreValue = 0;
+    let questionItems = [];
+
+    function setMsg(text, ok) {
+      msgEl.textContent = text || '';
+      msgEl.className = 'msg ' + (ok ? 'ok' : 'err');
+    }
+
+    function renderQuestions(questions) {
+      const items = (questions && questions.items) || [];
+      questionItems = Array.isArray(items) ? items : [];
+      fieldsEl.innerHTML = '';
+      questionItems.forEach((q) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'field';
+        const label = document.createElement('label');
+        label.className = 'req';
+        label.textContent = q.label || q.key;
+        wrap.appendChild(label);
+        if (q.type === 'score') {
+          const row = document.createElement('div');
+          row.className = 'score-row';
+          for (let i = 1; i <= 5; i++) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = String(i);
+            b.dataset.score = String(i);
+            b.addEventListener('click', () => {
+              scoreValue = i;
+              row.querySelectorAll('button').forEach((x) => x.classList.remove('active'));
+              b.classList.add('active');
+            });
+            row.appendChild(b);
+          }
+          wrap.appendChild(row);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.rows = 3;
+          ta.dataset.key = q.key;
+          ta.placeholder = '请填写';
+          wrap.appendChild(ta);
+        }
+        fieldsEl.appendChild(wrap);
+      });
+      if (!questionItems.length) {
+        const wrap = document.createElement('div');
+        wrap.className = 'field';
+        wrap.innerHTML = '<label class="req">反馈内容</label><textarea rows="4" data-key="content" placeholder="请填写"></textarea>';
+        fieldsEl.appendChild(wrap);
+        questionItems = [{ key: 'content', type: 'text' }];
+      }
+    }
+
+    async function loadMeta() {
+      if (!token) {
+        setMsg('链接无效：缺少 token');
+        submitBtn.disabled = true;
+        return;
+      }
+      try {
+        const res = await fetch('/api/public/survey/meta?token=' + encodeURIComponent(token));
+        const body = await res.json();
+        if (!body || body.code !== 0) {
+          throw new Error((body && body.message) || '加载失败');
+        }
+        const data = body.data || {};
+        document.getElementById('title').textContent = data.survey_title || '客户问卷';
+        document.getElementById('meta').textContent =
+          '客户：' + (data.customer_name || '-') +
+          (data.expire_at ? '　有效期至：' + new Date(data.expire_at).toLocaleString('zh-CN') : '');
+        renderQuestions(data.questions || {});
+      } catch (e) {
+        setMsg(e.message || '问卷加载失败');
+        submitBtn.disabled = true;
+      }
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      const answers = {};
+      let hasText = false;
+      fieldsEl.querySelectorAll('textarea[data-key]').forEach((el) => {
+        const v = (el.value || '').trim();
+        answers[el.dataset.key] = v;
+        if (v) hasText = true;
+      });
+      if (scoreValue > 0) answers.score = scoreValue;
+      if (!hasText && scoreValue <= 0) {
+        setMsg('请至少填写一项内容');
+        return;
+      }
+      submitBtn.disabled = true;
+      setMsg('提交中…', true);
+      try {
+        const res = await fetch('/api/public/survey/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, answers, score: scoreValue || Number(answers.score) || 0 }),
+        });
+        const body = await res.json();
+        if (!body || body.code !== 0) {
+          throw new Error((body && body.message) || '提交失败');
+        }
+        document.getElementById('formCard').classList.add('hidden');
+        document.getElementById('doneCard').classList.remove('hidden');
+      } catch (e) {
+        setMsg(e.message || '提交失败');
+        submitBtn.disabled = false;
+      }
+    });
+
+    loadMeta();
+  </script>
+</body>
+</html>

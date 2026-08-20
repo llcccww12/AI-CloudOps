@@ -229,7 +229,7 @@ func (d *opsReminderRuleDAO) Create(ctx context.Context, rule *model.OpsReminder
 func (d *opsReminderRuleDAO) Update(ctx context.Context, rule *model.OpsReminderRule) error {
 	return d.db.WithContext(ctx).Model(&model.OpsReminderRule{}).Where("id = ?", rule.ID).Updates(map[string]interface{}{
 		"name": rule.Name, "advance_days": rule.AdvanceDays, "enabled": rule.Enabled,
-		"channels": rule.Channels, "remark": rule.Remark,
+		"channels": rule.Channels, "extra_user_ids": rule.ExtraUserIDs, "remark": rule.Remark,
 	}).Error
 }
 func (d *opsReminderRuleDAO) EnsureDefaults(ctx context.Context) error {

@@ -19,16 +19,35 @@ type OpsCustomerService interface {
 	ChangeStage(ctx context.Context, req *model.ChangeOpsCustomerStageReq) error
 	CreateFollowup(ctx context.Context, req *model.CreateOpsFollowupReq) error
 	ListFollowups(ctx context.Context, req *model.ListOpsFollowupReq) (*model.ListResp[*model.OpsFollowup], error)
+	GetVendorProfile(ctx context.Context, customerID int) (*model.OpsVendorProfile, error)
+	UpsertVendorProfile(ctx context.Context, req *model.UpsertOpsVendorProfileReq) error
 }
 
 type opsCustomerService struct {
 	customerDAO dao.OpsCustomerDAO
 	followupDAO dao.OpsFollowupDAO
+	vendorDAO   dao.OpsVendorProfileDAO
+	surveyDAO   dao.OpsSurveyDAO
 	logger      *zap.Logger
 }
 
-func NewOpsCustomerService(customerDAO dao.OpsCustomerDAO, followupDAO dao.OpsFollowupDAO, logger *zap.Logger) OpsCustomerService {
-	return &opsCustomerService{customerDAO: customerDAO, followupDAO: followupDAO, logger: logger}
+func NewOpsCustomerService(
+	customerDAO dao.OpsCustomerDAO,
+	followupDAO dao.OpsFollowupDAO,
+	vendorDAO dao.OpsVendorProfileDAO,
+	surveyDAO dao.OpsSurveyDAO,
+	logger *zap.Logger,
+) OpsCustomerService {
+	return &opsCustomerService{
+		customerDAO: customerDAO, followupDAO: followupDAO,
+		vendorDAO: vendorDAO, surveyDAO: surveyDAO, logger: logger,
+	}
+}
+
+// needNonRenewalSurvey 非成功交付类闭环需先填不续费问卷
+var needNonRenewalSurvey = map[string]bool{
+	"客户放弃": true, "竞品赢单": true, "预算不足": true,
+	"需求变更": true, "长期无跟进": true, "其他": true,
 }
 
 func (s *opsCustomerService) Create(ctx context.Context, req *model.CreateOpsCustomerReq) error {
@@ -65,7 +84,7 @@ func (s *opsCustomerService) Update(ctx context.Context, req *model.UpdateOpsCus
 		Industry: req.Industry, ContactName: req.ContactName, ContactTitle: req.ContactTitle,
 		ContactPhone: req.ContactPhone, ContactEmail: req.ContactEmail,
 		OwnerID: req.OwnerID, OwnerName: req.OwnerName, BudgetRange: req.BudgetRange,
-		NextFollowAt: req.NextFollowAt, Remark: req.Remark,
+		NextFollowAt: req.NextFollowAt, Remark: req.Remark, VendorProfileDone: req.VendorProfileDone,
 	})
 }
 
@@ -105,10 +124,56 @@ func (s *opsCustomerService) ChangeStage(ctx context.Context, req *model.ChangeO
 	if allowed := allowedStageTransitions[c.Stage]; !allowed[req.Stage] {
 		return fmt.Errorf("不允许从 %s 流转到 %s", c.Stage, req.Stage)
 	}
-	if req.Stage == model.OpsCustomerStageClosed && strings.TrimSpace(req.ClosedReason) == "" {
+	reason := strings.TrimSpace(req.ClosedReason)
+	if req.Stage == model.OpsCustomerStageClosed && reason == "" {
 		return fmt.Errorf("闭环需填写原因")
 	}
-	return s.customerDAO.UpdateStage(ctx, req.ID, req.Stage, req.ClosedReason)
+	if req.Stage == model.OpsCustomerStageClosed && needNonRenewalSurvey[reason] && s.surveyDAO != nil {
+		ok, err := s.surveyDAO.HasResponse(ctx, req.ID, model.OpsSurveyTypeNonRenewal)
+		if err != nil {
+			return fmt.Errorf("校验不续费问卷失败: %w", err)
+		}
+		if !ok {
+			return fmt.Errorf("闭环前请先提交不续费原因问卷")
+		}
+	}
+	return s.customerDAO.UpdateStage(ctx, req.ID, req.Stage, reason)
+}
+
+func (s *opsCustomerService) GetVendorProfile(ctx context.Context, customerID int) (*model.OpsVendorProfile, error) {
+	if _, err := s.customerDAO.GetByID(ctx, customerID); err != nil {
+		return nil, err
+	}
+	return s.vendorDAO.GetByCustomerID(ctx, customerID)
+}
+
+func (s *opsCustomerService) UpsertVendorProfile(ctx context.Context, req *model.UpsertOpsVendorProfileReq) error {
+	if _, err := s.customerDAO.GetByID(ctx, req.CustomerID); err != nil {
+		return err
+	}
+	accountType := strings.TrimSpace(req.AccountType)
+	if accountType == "" {
+		accountType = "corporate"
+	}
+	p := &model.OpsVendorProfile{
+		CustomerID: req.CustomerID, UnitName: strings.TrimSpace(req.UnitName),
+		CreditCode: strings.TrimSpace(req.CreditCode), Principal: strings.TrimSpace(req.Principal),
+		ContactAddressPhone: strings.TrimSpace(req.ContactAddressPhone),
+		CnapsCode: strings.TrimSpace(req.CnapsCode), AccountName: strings.TrimSpace(req.AccountName),
+		BankName: strings.TrimSpace(req.BankName), BankAccount: strings.TrimSpace(req.BankAccount),
+		BankProvince: strings.TrimSpace(req.BankProvince), BankCity: strings.TrimSpace(req.BankCity),
+		Phone: strings.TrimSpace(req.Phone), AccountType: accountType,
+		OperatorID: req.OperatorID, OperatorName: req.OperatorName,
+	}
+	if err := s.vendorDAO.Upsert(ctx, p); err != nil {
+		return err
+	}
+	c, err := s.customerDAO.GetByID(ctx, req.CustomerID)
+	if err != nil {
+		return err
+	}
+	c.VendorProfileDone = 1
+	return s.customerDAO.Update(ctx, c)
 }
 
 func (s *opsCustomerService) CreateFollowup(ctx context.Context, req *model.CreateOpsFollowupReq) error {

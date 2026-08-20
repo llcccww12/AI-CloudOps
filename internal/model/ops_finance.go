@@ -40,13 +40,6 @@ const (
 
 	OpsPaymentStatusPending = "pending"
 	OpsPaymentStatusMatched = "matched"
-
-	OpsReminderSceneTrialExpire     = "trial_expire"
-	OpsReminderSceneContractRenew   = "contract_renew"
-	OpsReminderSceneSettlementDue   = "settlement_due"
-	OpsReminderSceneInvoice         = "invoice"
-	OpsReminderScenePaymentFollowup = "payment_followup"
-	OpsReminderSceneVisitPreDue     = "visit_pre_due"
 )
 
 // OpsSettlement 结算单
@@ -179,58 +172,4 @@ type ListOpsPaymentReq struct {
 	ListReq
 	CustomerID   int `json:"customer_id" form:"customer_id"`
 	SettlementID int `json:"settlement_id" form:"settlement_id"`
-}
-
-// OpsReminderRule 提醒规则
-type OpsReminderRule struct {
-	Model
-	Scene       string     `json:"scene" gorm:"column:scene;type:varchar(64);not null;index;comment:场景"`
-	Name        string     `json:"name" gorm:"column:name;type:varchar(100);not null;comment:名称"`
-	AdvanceDays int        `json:"advance_days" gorm:"column:advance_days;not null;default:0;comment:提前天数"`
-	Enabled     int8       `json:"enabled" gorm:"column:enabled;not null;default:1;comment:启用1是2否"`
-	Channels    StringList `json:"channels" gorm:"column:channels;type:text;serializer:json;comment:渠道"`
-	Remark      string     `json:"remark" gorm:"column:remark;type:varchar(255);comment:备注"`
-}
-
-func (OpsReminderRule) TableName() string { return "cl_ops_reminder_rule" }
-
-type CreateOpsReminderRuleReq struct {
-	Scene       string     `json:"scene" binding:"required,oneof=trial_expire contract_renew settlement_due invoice payment_followup"`
-	Name        string     `json:"name" binding:"required,min=1,max=100"`
-	AdvanceDays int        `json:"advance_days" binding:"min=0,max=365"`
-	Enabled     int8       `json:"enabled" binding:"omitempty,oneof=1 2"`
-	Channels    StringList `json:"channels"`
-	Remark      string     `json:"remark"`
-}
-
-type UpdateOpsReminderRuleReq struct {
-	ID          int        `json:"id" binding:"required,min=1"`
-	Name        string     `json:"name"`
-	AdvanceDays int        `json:"advance_days"`
-	Enabled     int8       `json:"enabled" binding:"omitempty,oneof=1 2"`
-	Channels    StringList `json:"channels"`
-	Remark      string     `json:"remark"`
-}
-
-// OpsReminderHit 提醒命中预览
-type OpsReminderHit struct {
-	RuleID         int    `json:"rule_id"`
-	Scene          string `json:"scene"`
-	RuleName       string `json:"rule_name"`
-	AdvanceDays    int    `json:"advance_days"`
-	TargetUserID   int    `json:"target_user_id"`
-	TargetUserHint string `json:"target_user_hint"`
-	BizType        string `json:"biz_type"`
-	BizID          int    `json:"biz_id"`
-	BizTitle       string `json:"biz_title"`
-	CustomerID     int    `json:"customer_id"`
-	CustomerName   string `json:"customer_name"`
-	Link           string `json:"link"`
-	Reason         string `json:"reason"`
-}
-
-type OpsReminderScanResult struct {
-	HitCount      int `json:"hit_count"`
-	NotifyCount   int `json:"notify_count"`
-	SkippedNoOwner int `json:"skipped_no_owner"`
 }

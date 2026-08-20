@@ -10,11 +10,11 @@ import (
 	"github.com/GoSimplicity/AI-CloudOps/internal/app"
 	"github.com/GoSimplicity/AI-CloudOps/internal/config"
 	"github.com/GoSimplicity/AI-CloudOps/internal/cron"
-	api7 "github.com/GoSimplicity/AI-CloudOps/internal/cron/api"
-	dao5 "github.com/GoSimplicity/AI-CloudOps/internal/cron/dao"
+	api8 "github.com/GoSimplicity/AI-CloudOps/internal/cron/api"
+	dao6 "github.com/GoSimplicity/AI-CloudOps/internal/cron/dao"
 	"github.com/GoSimplicity/AI-CloudOps/internal/cron/handler"
 	"github.com/GoSimplicity/AI-CloudOps/internal/cron/scheduler"
-	service6 "github.com/GoSimplicity/AI-CloudOps/internal/cron/service"
+	service7 "github.com/GoSimplicity/AI-CloudOps/internal/cron/service"
 	api3 "github.com/GoSimplicity/AI-CloudOps/internal/k8s/api"
 	"github.com/GoSimplicity/AI-CloudOps/internal/k8s/client"
 	dao3 "github.com/GoSimplicity/AI-CloudOps/internal/k8s/dao"
@@ -22,6 +22,9 @@ import (
 	service3 "github.com/GoSimplicity/AI-CloudOps/internal/k8s/service"
 	api2 "github.com/GoSimplicity/AI-CloudOps/internal/not_auth/api"
 	service2 "github.com/GoSimplicity/AI-CloudOps/internal/not_auth/service"
+	api7 "github.com/GoSimplicity/AI-CloudOps/internal/ops/api"
+	dao5 "github.com/GoSimplicity/AI-CloudOps/internal/ops/dao"
+	service6 "github.com/GoSimplicity/AI-CloudOps/internal/ops/service"
 	api4 "github.com/GoSimplicity/AI-CloudOps/internal/prometheus/api"
 	"github.com/GoSimplicity/AI-CloudOps/internal/prometheus/cache"
 	"github.com/GoSimplicity/AI-CloudOps/internal/prometheus/dao/alert"
@@ -37,9 +40,6 @@ import (
 	api6 "github.com/GoSimplicity/AI-CloudOps/internal/tree/api"
 	dao2 "github.com/GoSimplicity/AI-CloudOps/internal/tree/dao"
 	service5 "github.com/GoSimplicity/AI-CloudOps/internal/tree/service"
-	opsApi "github.com/GoSimplicity/AI-CloudOps/internal/ops/api"
-	opsDao "github.com/GoSimplicity/AI-CloudOps/internal/ops/dao"
-	opsService "github.com/GoSimplicity/AI-CloudOps/internal/ops/service"
 	api5 "github.com/GoSimplicity/AI-CloudOps/internal/workorder/api"
 	dao4 "github.com/GoSimplicity/AI-CloudOps/internal/workorder/dao"
 	service4 "github.com/GoSimplicity/AI-CloudOps/internal/workorder/service"
@@ -199,12 +199,12 @@ func ProvideApp(cfg *config.Config) (*app.App, error) {
 	workorderCommentAttachmentDAO := dao4.NewWorkorderCommentAttachmentDAO(db, logger)
 	workorderNotificationDAO := dao4.NewNotificationDAO(db, logger)
 	workorderNotificationReminderDAO := dao4.NewNotificationReminderDAO(db, logger)
-	workorderInboxDAO := dao4.NewWorkorderInboxDAO(db, logger)
 	notificationConfig, err := InitNotificationConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 	asynqClient := InitAsynqClient(cfg)
+	workorderInboxDAO := dao4.NewWorkorderInboxDAO(db, logger)
 	notificationManager, err := InitNotificationManager(notificationConfig, asynqClient, logger, workorderInboxDAO)
 	if err != nil {
 		return nil, err
@@ -237,6 +237,35 @@ func ProvideApp(cfg *config.Config) (*app.App, error) {
 	cloudAccountRegionService := service5.NewCloudAccountRegionService(logger, cloudAccountRegionDAO, cloudAccountService)
 	cloudAccountRegionHandler := api6.NewCloudAccountRegionHandler(cloudAccountRegionService)
 	notificationHandler := api5.NewNotificationHandler(workorderNotificationService)
+	opsCustomerDAO := dao5.NewOpsCustomerDAO(db, logger)
+	opsFollowupDAO := dao5.NewOpsFollowupDAO(db, logger)
+	opsVendorProfileDAO := dao5.NewOpsVendorProfileDAO(db, logger)
+	opsSurveyDAO := dao5.NewOpsSurveyDAO(db, logger)
+	opsCustomerService := service6.NewOpsCustomerService(opsCustomerDAO, opsFollowupDAO, opsVendorProfileDAO, opsSurveyDAO, logger)
+	opsExhibitionDAO := dao5.NewOpsExhibitionDAO(db, logger)
+	opsVisitDAO := dao5.NewOpsVisitDAO(db, logger)
+	opsAttachmentDAO := dao5.NewOpsAttachmentDAO(db, logger)
+	opsLeadService := service6.NewOpsLeadService(opsExhibitionDAO, opsVisitDAO, opsCustomerDAO, opsAttachmentDAO, workorderInboxDAO, logger)
+	opsTrialDAO := dao5.NewOpsTrialDAO(db, logger)
+	opsContractDAO := dao5.NewOpsContractDAO(db, logger)
+	opsActivationDAO := dao5.NewOpsActivationDAO(db, logger)
+	opsApprovalLinkDAO := dao5.NewOpsApprovalLinkDAO(db, logger)
+	opsSettlementDAO := dao5.NewOpsSettlementDAO(db, logger)
+	opsInvoiceDAO := dao5.NewOpsInvoiceDAO(db, logger)
+	opsPaymentDAO := dao5.NewOpsPaymentDAO(db, logger)
+	opsContractItemDAO := dao5.NewOpsContractItemDAO(db, logger)
+	opsBizService := service6.NewOpsBizService(opsTrialDAO, opsContractDAO, opsActivationDAO, opsApprovalLinkDAO, opsCustomerDAO, opsFollowupDAO, opsSettlementDAO, opsInvoiceDAO, opsPaymentDAO, opsContractItemDAO, workorderProcessDAO, instanceService, logger)
+	opsFinanceService := service6.NewOpsFinanceService(opsSettlementDAO, opsInvoiceDAO, opsPaymentDAO, opsCustomerDAO, opsContractDAO, logger)
+	opsReminderRuleDAO := dao5.NewOpsReminderRuleDAO(db, logger)
+	opsReminderTaskDAO := dao5.NewOpsReminderTaskDAO(db, logger)
+	opsReminderDeliveryDAO := dao5.NewOpsReminderDeliveryDAO(db, logger)
+	opsReminderService := service6.NewOpsReminderService(opsReminderRuleDAO, opsReminderTaskDAO, opsReminderDeliveryDAO, opsTrialDAO, opsContractDAO, opsSettlementDAO, opsCustomerDAO, opsVisitDAO, workorderInboxDAO, userDAO, notificationManager, opsBizService, logger)
+	opsAttachmentService := service6.NewOpsAttachmentService(opsAttachmentDAO, opsContractDAO, opsSettlementDAO, opsExhibitionDAO, logger)
+	opsDashboardService := service6.NewOpsDashboardService(opsExhibitionDAO, opsVisitDAO, opsCustomerDAO, logger)
+	opsSurveyService := service6.NewOpsSurveyService(opsSurveyDAO, opsCustomerDAO, logger)
+	opsBillingService := service6.NewOpsBillingService(opsContractDAO, opsSettlementDAO, opsInvoiceDAO, logger)
+	opsWorkbenchService := service6.NewOpsWorkbenchService(opsTrialDAO, opsContractDAO, opsSettlementDAO, opsCustomerDAO, opsSurveyDAO, logger)
+	opsHandler := api7.NewOpsHandler(opsCustomerService, opsLeadService, opsBizService, opsFinanceService, opsReminderService, opsAttachmentService, opsDashboardService, opsSurveyService, opsBillingService, opsWorkbenchService)
 	ingressManager := manager.NewIngressManager(k8sClient, logger)
 	ingressService := service3.NewIngressService(ingressManager, logger)
 	k8sIngressHandler := api3.NewK8sIngressHandler(ingressService)
@@ -250,36 +279,15 @@ func ProvideApp(cfg *config.Config) (*app.App, error) {
 	pvcManager := manager.NewPVCManager(logger, k8sClient)
 	pvcService := service3.NewPVCService(clusterDAO, k8sClient, pvcManager, logger)
 	k8sPVCHandler := api3.NewK8sPVCHandler(pvcService)
-	cronJobDAO := dao5.NewCronJobDAO(logger, db)
+	cronJobDAO := dao6.NewCronJobDAO(logger, db)
 	asynqScheduler := InitScheduler(cfg)
 	cronScheduler := scheduler.NewCronScheduler(logger, cronJobDAO, asynqScheduler, asynqClient)
-	cronService := service6.NewCronService(logger, cronJobDAO, userDAO, asynqClient, cronScheduler)
-	opsCustomerDAO := opsDao.NewOpsCustomerDAO(db, logger)
-	opsFollowupDAO := opsDao.NewOpsFollowupDAO(db, logger)
-	opsCustomerService := opsService.NewOpsCustomerService(opsCustomerDAO, opsFollowupDAO, logger)
-	opsExhibitionDAO := opsDao.NewOpsExhibitionDAO(db, logger)
-	opsVisitDAO := opsDao.NewOpsVisitDAO(db, logger)
-	opsAttachmentDAO := opsDao.NewOpsAttachmentDAO(db, logger)
-	opsLeadService := opsService.NewOpsLeadService(opsExhibitionDAO, opsVisitDAO, opsCustomerDAO, opsAttachmentDAO, workorderInboxDAO, logger)
-	opsDashboardService := opsService.NewOpsDashboardService(opsExhibitionDAO, opsVisitDAO, opsCustomerDAO, logger)
-	opsTrialDAO := opsDao.NewOpsTrialDAO(db, logger)
-	opsContractDAO := opsDao.NewOpsContractDAO(db, logger)
-	opsActivationDAO := opsDao.NewOpsActivationDAO(db, logger)
-	opsApprovalLinkDAO := opsDao.NewOpsApprovalLinkDAO(db, logger)
-	opsSettlementDAO := opsDao.NewOpsSettlementDAO(db, logger)
-	opsInvoiceDAO := opsDao.NewOpsInvoiceDAO(db, logger)
-	opsPaymentDAO := opsDao.NewOpsPaymentDAO(db, logger)
-	opsBizService := opsService.NewOpsBizService(opsTrialDAO, opsContractDAO, opsActivationDAO, opsApprovalLinkDAO, opsCustomerDAO, opsFollowupDAO, opsSettlementDAO, opsInvoiceDAO, opsPaymentDAO, workorderProcessDAO, instanceService, logger)
-	opsFinanceService := opsService.NewOpsFinanceService(opsSettlementDAO, opsInvoiceDAO, opsPaymentDAO, opsCustomerDAO, opsContractDAO, logger)
-	opsReminderRuleDAO := opsDao.NewOpsReminderRuleDAO(db, logger)
-	opsReminderService := opsService.NewOpsReminderService(opsReminderRuleDAO, opsTrialDAO, opsContractDAO, opsSettlementDAO, opsCustomerDAO, opsVisitDAO, workorderInboxDAO, opsBizService, logger)
-	opsAttachmentService := opsService.NewOpsAttachmentService(opsAttachmentDAO, opsContractDAO, opsSettlementDAO, opsExhibitionDAO, logger)
-	opsHandler := opsApi.NewOpsHandler(opsCustomerService, opsLeadService, opsBizService, opsFinanceService, opsReminderService, opsAttachmentService, opsDashboardService)
-	cronJobHandler := api7.NewCronJobHandler(logger, cronService)
+	cronService := service7.NewCronService(logger, cronJobDAO, userDAO, asynqClient, cronScheduler)
+	cronJobHandler := api8.NewCronJobHandler(logger, cronService)
 	engine := InitGinServer(v, userHandler, apiHandler, roleHandler, systemHandler, departmentHandler, notAuthHandler, k8sClusterHandler, k8sDeploymentHandler, k8sNamespaceHandler, k8sNodeHandler, k8sSvcHandler, k8sYamlTaskHandler, k8sYamlTemplateHandler, k8sDaemonSetHandler, k8sEventHandler, k8sStatefulSetHandler, k8sServiceAccountHandler, k8sRoleHandler, k8sClusterRoleHandler, k8sRoleBindingHandler, k8sClusterRoleBindingHandler, k8sConfigMapHandler, k8sSecretHandler, alertEventHandler, alertPoolHandler, alertRuleHandler, monitorConfigHandler, onDutyGroupHandler, recordRuleHandler, scrapePoolHandler, scrapeJobHandler, sendGroupHandler, auditHandler, formDesignHandler, workorderProcessHandler, templateHandler, instanceHandler, instanceFlowHandler, instanceCommentHandler, categoryGroupHandler, instanceTimeLineHandler, treeNodeHandler, treeLocalHandler, treeCloudHandler, cloudAccountHandler, cloudAccountRegionHandler, notificationHandler, opsHandler, k8sIngressHandler, k8sPodHandler, k8sPVHandler, k8sPVCHandler, cronJobHandler)
 	applicationBootstrap := startup.NewApplicationBootstrap(clusterManager, logger)
 	builtinTaskManager := cron.NewBuiltinTaskManager(logger, cronJobDAO)
-	cronManager := cron.NewUnifiedCronManager(logger, alertManagerOnDutyDAO, clusterDAO, k8sClient, clusterManager, monitorCache, cronScheduler, builtinTaskManager, workorderNotificationService, opsReminderService)
+	cronManager := cron.NewUnifiedCronManager(logger, alertManagerOnDutyDAO, clusterDAO, k8sClient, clusterManager, monitorCache, cronScheduler, builtinTaskManager, workorderNotificationService, opsReminderService, opsBillingService)
 	server := InitAsynqServer(cfg)
 	cronHandlers := handler.NewCronHandlers(logger, cronJobDAO, treeLocalDAO, alertManagerOnDutyDAO, clusterDAO, k8sClient, clusterManager, monitorCache)
 	appApp, err := app.NewApp(cfg, logger, db, engine, applicationBootstrap, cronManager, server, asynqScheduler, cronHandlers)
@@ -291,11 +299,11 @@ func ProvideApp(cfg *config.Config) (*app.App, error) {
 
 // wire.go:
 
-var HandlerSet = wire.NewSet(api.NewRoleHandler, api.NewApiHandler, api.NewAuditHandler, api.NewSystemHandler, api.NewUserHandler, api.NewDepartmentHandler, api2.NewNotAuthHandler, api3.NewK8sNodeHandler, api3.NewK8sClusterHandler, api3.NewK8sDeploymentHandler, api3.NewK8sNamespaceHandler, api3.NewK8sSvcHandler, api3.NewK8sYamlTaskHandler, api3.NewK8sYamlTemplateHandler, api3.NewK8sDaemonSetHandler, api3.NewK8sEventHandler, api3.NewK8sStatefulSetHandler, api3.NewK8sServiceAccountHandler, api3.NewK8sRoleHandler, api3.NewK8sClusterRoleHandler, api3.NewK8sRoleBindingHandler, api3.NewK8sClusterRoleBindingHandler, api3.NewK8sRBACHandler, api3.NewK8sIngressHandler, api3.NewK8sPodHandler, api3.NewK8sConfigMapHandler, api3.NewK8sSecretHandler, api3.NewK8sPVHandler, api3.NewK8sPVCHandler, api4.NewAlertPoolHandler, api4.NewMonitorConfigHandler, api4.NewOnDutyGroupHandler, api4.NewRecordRuleHandler, api4.NewAlertRuleHandler, api4.NewSendGroupHandler, api4.NewScrapeJobHandler, api4.NewScrapePoolHandler, api4.NewAlertEventHandler, api5.NewFormDesignHandler, api5.NewInstanceHandler, api5.NewInstanceFlowHandler, api5.NewInstanceCommentHandler, api5.NewInstanceTimeLineHandler, api5.NewTemplateHandler, api5.NewWorkorderProcessHandler, api5.NewCategoryGroupHandler, api5.NewNotificationHandler, opsApi.NewOpsHandler, api6.NewTreeNodeHandler, api6.NewTreeLocalHandler, api6.NewTreeCloudHandler, api6.NewCloudAccountHandler, api6.NewCloudAccountRegionHandler, terminal.NewTerminalHandler, api7.NewCronJobHandler)
+var HandlerSet = wire.NewSet(api.NewRoleHandler, api.NewApiHandler, api.NewAuditHandler, api.NewSystemHandler, api.NewUserHandler, api.NewDepartmentHandler, api2.NewNotAuthHandler, api3.NewK8sNodeHandler, api3.NewK8sClusterHandler, api3.NewK8sDeploymentHandler, api3.NewK8sNamespaceHandler, api3.NewK8sSvcHandler, api3.NewK8sYamlTaskHandler, api3.NewK8sYamlTemplateHandler, api3.NewK8sDaemonSetHandler, api3.NewK8sEventHandler, api3.NewK8sStatefulSetHandler, api3.NewK8sServiceAccountHandler, api3.NewK8sRoleHandler, api3.NewK8sClusterRoleHandler, api3.NewK8sRoleBindingHandler, api3.NewK8sClusterRoleBindingHandler, api3.NewK8sRBACHandler, api3.NewK8sIngressHandler, api3.NewK8sPodHandler, api3.NewK8sConfigMapHandler, api3.NewK8sSecretHandler, api3.NewK8sPVHandler, api3.NewK8sPVCHandler, api4.NewAlertPoolHandler, api4.NewMonitorConfigHandler, api4.NewOnDutyGroupHandler, api4.NewRecordRuleHandler, api4.NewAlertRuleHandler, api4.NewSendGroupHandler, api4.NewScrapeJobHandler, api4.NewScrapePoolHandler, api4.NewAlertEventHandler, api5.NewFormDesignHandler, api5.NewInstanceHandler, api5.NewInstanceFlowHandler, api5.NewInstanceCommentHandler, api5.NewInstanceTimeLineHandler, api5.NewTemplateHandler, api5.NewWorkorderProcessHandler, api5.NewCategoryGroupHandler, api5.NewNotificationHandler, api7.NewOpsHandler, api6.NewTreeNodeHandler, api6.NewTreeLocalHandler, api6.NewTreeCloudHandler, api6.NewCloudAccountHandler, api6.NewCloudAccountRegionHandler, terminal.NewTerminalHandler, api8.NewCronJobHandler)
 
-var ServiceSet = wire.NewSet(service3.NewClusterService, service3.NewDeploymentService, service3.NewNamespaceService, service3.NewSvcService, service3.NewNodeService, service3.NewTaintService, service3.NewYamlTaskService, service3.NewYamlTemplateService, service3.NewDaemonSetService, service3.NewEventService, service3.NewStatefulSetService, service3.NewServiceAccountService, service3.NewRoleService, service3.NewClusterRoleService, service3.NewRoleBindingService, service3.NewClusterRoleBindingService, service3.NewRBACService, service3.NewIngressService, service3.NewPodService, service3.NewConfigMapService, service3.NewSecretService, service3.NewPVService, service3.NewPVCService, service.NewUserService, service.NewApiService, service.NewRoleService, service.NewAuditService, service.NewSystemService, service.NewDepartmentService, alert2.NewAlertManagerEventService, alert2.NewAlertManagerOnDutyService, alert2.NewAlertManagerPoolService, alert2.NewAlertManagerRecordService, alert2.NewAlertManagerRuleService, alert2.NewAlertManagerSendService, scrape2.NewPrometheusScrapeService, scrape2.NewPrometheusPoolService, config3.NewMonitorConfigService, service2.NewNotAuthService, service4.NewFormDesignService, service4.NewInstanceService, service4.NewInstanceFlowService, service4.NewInstanceCommentService, service4.NewWorkorderInstanceTimeLineService, service4.NewWorkorderTemplateService, service4.NewWorkorderProcessService, service4.NewCategoryGroupService, service4.NewWorkorderNotificationService, opsService.NewOpsCustomerService, opsService.NewOpsLeadService, opsService.NewOpsBizService, opsService.NewOpsFinanceService, opsService.NewOpsReminderService, opsService.NewOpsAttachmentService, opsService.NewOpsDashboardService, service5.NewTreeNodeService, service5.NewTreeLocalService, service5.NewTreeCloudService, service5.NewCloudAccountService, service5.NewCloudAccountRegionService, service6.NewCronService)
+var ServiceSet = wire.NewSet(service3.NewClusterService, service3.NewDeploymentService, service3.NewNamespaceService, service3.NewSvcService, service3.NewNodeService, service3.NewTaintService, service3.NewYamlTaskService, service3.NewYamlTemplateService, service3.NewDaemonSetService, service3.NewEventService, service3.NewStatefulSetService, service3.NewServiceAccountService, service3.NewRoleService, service3.NewClusterRoleService, service3.NewRoleBindingService, service3.NewClusterRoleBindingService, service3.NewRBACService, service3.NewIngressService, service3.NewPodService, service3.NewConfigMapService, service3.NewSecretService, service3.NewPVService, service3.NewPVCService, service.NewUserService, service.NewApiService, service.NewRoleService, service.NewAuditService, service.NewSystemService, service.NewDepartmentService, alert2.NewAlertManagerEventService, alert2.NewAlertManagerOnDutyService, alert2.NewAlertManagerPoolService, alert2.NewAlertManagerRecordService, alert2.NewAlertManagerRuleService, alert2.NewAlertManagerSendService, scrape2.NewPrometheusScrapeService, scrape2.NewPrometheusPoolService, config3.NewMonitorConfigService, service2.NewNotAuthService, service4.NewFormDesignService, service4.NewInstanceService, service4.NewInstanceFlowService, service4.NewInstanceCommentService, service4.NewWorkorderInstanceTimeLineService, service4.NewWorkorderTemplateService, service4.NewWorkorderProcessService, service4.NewCategoryGroupService, service4.NewWorkorderNotificationService, service6.NewOpsCustomerService, service6.NewOpsLeadService, service6.NewOpsBizService, service6.NewOpsFinanceService, service6.NewOpsReminderService, service6.NewOpsAttachmentService, service6.NewOpsDashboardService, service6.NewOpsSurveyService, service6.NewOpsBillingService, service6.NewOpsWorkbenchService, service5.NewTreeNodeService, service5.NewTreeLocalService, service5.NewTreeCloudService, service5.NewCloudAccountService, service5.NewCloudAccountRegionService, service7.NewCronService)
 
-var DaoSet = wire.NewSet(alert.NewAlertManagerEventDAO, alert.NewAlertManagerOnDutyDAO, alert.NewAlertManagerPoolDAO, alert.NewAlertManagerRecordDAO, alert.NewAlertManagerRuleDAO, alert.NewAlertManagerSendDAO, scrape.NewScrapeJobDAO, scrape.NewScrapePoolDAO, config2.NewMonitorConfigDAO, dao.NewUserDAO, dao.NewRoleDAO, dao.NewApiDAO, dao.NewAuditDAO, dao.NewDepartmentDAO, dao3.NewClusterDAO, dao3.NewYamlTaskDAO, dao3.NewYamlTemplateDAO, dao4.NewWorkorderFormDesignDAO, dao4.NewTemplateDAO, dao4.NewWorkorderInstanceDAO, dao4.NewProcessDAO, dao4.NewWorkorderCategoryDAO, dao4.NewWorkorderInstanceCommentDAO, dao4.NewWorkorderCommentAttachmentDAO, dao4.NewInstanceFlowDAO, dao4.NewInstanceTimeLineDAO, dao4.NewNotificationDAO, dao4.NewNotificationReminderDAO, dao4.NewWorkorderInboxDAO, opsDao.NewOpsCustomerDAO, opsDao.NewOpsFollowupDAO, opsDao.NewOpsExhibitionDAO, opsDao.NewOpsVisitDAO, opsDao.NewOpsTrialDAO, opsDao.NewOpsContractDAO, opsDao.NewOpsActivationDAO, opsDao.NewOpsApprovalLinkDAO, opsDao.NewOpsSettlementDAO, opsDao.NewOpsInvoiceDAO, opsDao.NewOpsPaymentDAO, opsDao.NewOpsReminderRuleDAO, opsDao.NewOpsAttachmentDAO, dao2.NewTreeNodeDAO, dao2.NewTreeLocalDAO, dao2.NewTreeCloudDAO, dao2.NewCloudAccountDAO, dao2.NewCloudAccountRegionDAO, dao5.NewCronJobDAO)
+var DaoSet = wire.NewSet(alert.NewAlertManagerEventDAO, alert.NewAlertManagerOnDutyDAO, alert.NewAlertManagerPoolDAO, alert.NewAlertManagerRecordDAO, alert.NewAlertManagerRuleDAO, alert.NewAlertManagerSendDAO, scrape.NewScrapeJobDAO, scrape.NewScrapePoolDAO, config2.NewMonitorConfigDAO, dao.NewUserDAO, dao.NewRoleDAO, dao.NewApiDAO, dao.NewAuditDAO, dao.NewDepartmentDAO, dao3.NewClusterDAO, dao3.NewYamlTaskDAO, dao3.NewYamlTemplateDAO, dao4.NewWorkorderFormDesignDAO, dao4.NewTemplateDAO, dao4.NewWorkorderInstanceDAO, dao4.NewProcessDAO, dao4.NewWorkorderCategoryDAO, dao4.NewWorkorderInstanceCommentDAO, dao4.NewWorkorderCommentAttachmentDAO, dao4.NewInstanceFlowDAO, dao4.NewInstanceTimeLineDAO, dao4.NewNotificationDAO, dao4.NewNotificationReminderDAO, dao4.NewWorkorderInboxDAO, dao5.NewOpsCustomerDAO, dao5.NewOpsFollowupDAO, dao5.NewOpsExhibitionDAO, dao5.NewOpsVisitDAO, dao5.NewOpsTrialDAO, dao5.NewOpsContractDAO, dao5.NewOpsActivationDAO, dao5.NewOpsApprovalLinkDAO, dao5.NewOpsSettlementDAO, dao5.NewOpsInvoiceDAO, dao5.NewOpsPaymentDAO, dao5.NewOpsReminderRuleDAO, dao5.NewOpsReminderTaskDAO, dao5.NewOpsReminderDeliveryDAO, dao5.NewOpsContractItemDAO, dao5.NewOpsSurveyDAO, dao5.NewOpsAttachmentDAO, dao2.NewTreeNodeDAO, dao2.NewTreeLocalDAO, dao2.NewTreeCloudDAO, dao2.NewCloudAccountDAO, dao2.NewCloudAccountRegionDAO, dao6.NewCronJobDAO)
 
 var SSHSet = wire.NewSet(ssh.NewClient)
 

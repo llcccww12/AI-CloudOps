@@ -26,3 +26,14 @@ func TestAllowedStageTransitions(t *testing.T) {
 		}
 	}
 }
+
+func TestNeedNonRenewalSurvey(t *testing.T) {
+	if needNonRenewalSurvey["已签约交付"] {
+		t.Fatal("成功交付不应强制不续费问卷")
+	}
+	for _, r := range []string{"客户放弃", "竞品赢单", "预算不足", "需求变更", "长期无跟进", "其他"} {
+		if !needNonRenewalSurvey[r] {
+			t.Fatalf("%s 应强制不续费问卷", r)
+		}
+	}
+}

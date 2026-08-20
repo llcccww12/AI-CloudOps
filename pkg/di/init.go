@@ -100,6 +100,13 @@ func InitTables(db *gorm.DB) error {
 		&model.OpsInvoice{},
 		&model.OpsPayment{},
 		&model.OpsReminderRule{},
+		&model.OpsReminderTask{},
+		&model.OpsReminderDelivery{},
+		&model.OpsContractItem{},
+		&model.OpsSurvey{},
+		&model.OpsSurveyResponse{},
+		&model.OpsSurveyInvite{},
+		&model.OpsVendorProfile{},
 		&model.OpsAttachment{},
 
 		&model.CronJob{},

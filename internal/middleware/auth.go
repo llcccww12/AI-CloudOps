@@ -46,7 +46,10 @@ var skipAuthPaths = map[string]bool{
 	"/api/not_auth/getTreeNodeBindIps": true,
 	"/api/public/visitor/submit":       true,
 	"/api/public/visitor/upload":       true,
+	"/api/public/survey/meta":          true,
+	"/api/public/survey/submit":        true,
 	"/public/visitor":                  true,
+	"/public/survey":                   true,
 	"/favicon.ico":                     true,
 }
 

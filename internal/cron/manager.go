@@ -88,6 +88,7 @@ type unifiedCronManager struct {
 
 	notificationService workorderService.WorkorderNotificationService
 	opsReminderService  opsService.OpsReminderService
+	opsBillingService   opsService.OpsBillingService
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -105,6 +106,7 @@ func NewUnifiedCronManager(
 	builtinTaskMgr *BuiltinTaskManager,
 	notificationService workorderService.WorkorderNotificationService,
 	opsReminderService opsService.OpsReminderService,
+	opsBillingService opsService.OpsBillingService,
 ) CronManager {
 	return &unifiedCronManager{
 		logger:              logger,
@@ -117,6 +119,7 @@ func NewUnifiedCronManager(
 		builtinTaskMgr:      builtinTaskMgr,
 		notificationService: notificationService,
 		opsReminderService:  opsReminderService,
+		opsBillingService:   opsBillingService,
 	}
 }
 
@@ -210,6 +213,15 @@ func (cm *unifiedCronManager) StartSystemTasks(ctx context.Context) error {
 				defer cm.wg.Done()
 				if err := cm.startOpsReminderScanManager(ctx); err != nil {
 					cm.logger.Error("运营提醒扫描任务异常退出", zap.String("taskName", taskName), zap.Error(err))
+				}
+			}(task.Name)
+
+		case "ops_monthly_billing":
+			cm.wg.Add(1)
+			go func(taskName string) {
+				defer cm.wg.Done()
+				if err := cm.startOpsMonthlyBillingManager(ctx); err != nil {
+					cm.logger.Error("运营月结算任务异常退出", zap.String("taskName", taskName), zap.Error(err))
 				}
 			}(task.Name)
 
@@ -966,4 +978,42 @@ func (cm *unifiedCronManager) startOpsReminderScanManager(ctx context.Context) e
 	<-ctx.Done()
 	cm.logger.Info("运营提醒扫描任务已停止")
 	return nil
+}
+
+func (cm *unifiedCronManager) startOpsMonthlyBillingManager(ctx context.Context) error {
+	cm.logger.Info("启动运营月结算草稿生成任务")
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	runOnce := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				cm.logger.Error("运营月结算任务 panic", zap.Any("panic", r))
+			}
+		}()
+		if cm.opsBillingService == nil {
+			return
+		}
+		res, err := cm.opsBillingService.GenerateMonthlyDrafts(ctx)
+		if err != nil {
+			cm.logger.Error("运营月结算生成失败", zap.Error(err))
+			return
+		}
+		cm.logger.Info("运营月结算生成完成",
+			zap.Int("checked", res.ContractChecked),
+			zap.Int("settlements", res.SettlementCreated),
+			zap.Int("invoices", res.InvoiceCreated),
+			zap.Int("skipped", res.Skipped),
+		)
+	}
+	runOnce()
+	for {
+		select {
+		case <-ctx.Done():
+			cm.logger.Info("运营月结算任务已停止")
+			return nil
+		case <-ticker.C:
+			runOnce()
+		}
+	}
 }

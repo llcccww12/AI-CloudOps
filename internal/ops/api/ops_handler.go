@@ -20,6 +20,9 @@ type OpsHandler struct {
 	reminderSvc   service.OpsReminderService
 	attachmentSvc service.OpsAttachmentService
 	dashboardSvc  service.OpsDashboardService
+	surveySvc     service.OpsSurveyService
+	billingSvc    service.OpsBillingService
+	workbenchSvc  service.OpsWorkbenchService
 }
 
 func NewOpsHandler(
@@ -30,20 +33,27 @@ func NewOpsHandler(
 	reminderSvc service.OpsReminderService,
 	attachmentSvc service.OpsAttachmentService,
 	dashboardSvc service.OpsDashboardService,
+	surveySvc service.OpsSurveyService,
+	billingSvc service.OpsBillingService,
+	workbenchSvc service.OpsWorkbenchService,
 ) *OpsHandler {
 	return &OpsHandler{
 		customerSvc: customerSvc, leadSvc: leadSvc, bizSvc: bizSvc,
 		financeSvc: financeSvc, reminderSvc: reminderSvc, attachmentSvc: attachmentSvc,
-		dashboardSvc: dashboardSvc,
+		dashboardSvc: dashboardSvc, surveySvc: surveySvc, billingSvc: billingSvc,
+		workbenchSvc: workbenchSvc,
 	}
 }
 
 func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 	h.registerPublicVisitorRoutes(server)
+	h.registerPublicSurveyRoutes(server)
 
 	g := server.Group("/api/ops")
 	{
 		g.GET("/dashboard/overview", h.GetDashboardOverview)
+		g.GET("/workbench/briefing", h.GetWorkbenchBriefing)
+		g.POST("/workbench/reminder-draft", h.CreateReminderDraft)
 
 		g.POST("/customer/create", h.CreateCustomer)
 		g.PUT("/customer/update/:id", h.UpdateCustomer)
@@ -51,6 +61,8 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 		g.GET("/customer/detail/:id", h.GetCustomer)
 		g.GET("/customer/list", h.ListCustomer)
 		g.POST("/customer/change-stage", h.ChangeCustomerStage)
+		g.GET("/customer/vendor-profile/:id", h.GetVendorProfile)
+		g.POST("/customer/vendor-profile", h.UpsertVendorProfile)
 		g.POST("/followup/create", h.CreateFollowup)
 		g.GET("/followup/list", h.ListFollowup)
 		g.POST("/customer/lifecycle/start/:id", h.StartCustomerLifecycle)
@@ -87,6 +99,7 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 
 		g.POST("/activation/create", h.CreateActivation)
 		g.PUT("/activation/update/:id", h.UpdateActivation)
+		g.POST("/activation/feedback/:id", h.FeedbackActivation)
 		g.DELETE("/activation/delete/:id", h.DeleteActivation)
 		g.GET("/activation/detail/:id", h.GetActivation)
 		g.GET("/activation/list", h.ListActivation)
@@ -115,6 +128,23 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 		g.PUT("/reminder/update/:id", h.UpdateReminder)
 		g.GET("/reminder/preview", h.PreviewReminder)
 		g.POST("/reminder/scan", h.ScanReminder)
+		g.GET("/reminder/task/list", h.ListReminderTask)
+		g.POST("/reminder/task/create", h.CreateReminderTask)
+		g.PUT("/reminder/task/update/:id", h.UpdateReminderTask)
+		g.DELETE("/reminder/task/delete/:id", h.DeleteReminderTask)
+		g.GET("/reminder/delivery/list", h.ListReminderDelivery)
+
+		g.GET("/survey/list", h.ListSurvey)
+		g.POST("/survey/submit", h.SubmitSurvey)
+		g.GET("/survey/response/list", h.ListSurveyResponse)
+		g.POST("/survey/invite/create", h.CreateSurveyInvite)
+		g.GET("/survey/invite/list", h.ListSurveyInvite)
+
+		g.GET("/contract/item/list", h.ListContractItem)
+		g.POST("/contract/item/create", h.CreateContractItem)
+		g.DELETE("/contract/item/delete/:id", h.DeleteContractItem)
+
+		g.POST("/billing/generate-monthly", h.GenerateMonthlyBilling)
 
 		g.POST("/attachment/upload", h.UploadAttachment)
 		g.GET("/attachment/list", h.ListAttachment)
@@ -131,6 +161,25 @@ func (h *OpsHandler) GetDashboardOverview(ctx *gin.Context) {
 	var req model.OpsDashboardOverviewReq
 	base.HandleRequest(ctx, &req, func() (any, error) {
 		return h.dashboardSvc.Overview(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) GetWorkbenchBriefing(ctx *gin.Context) {
+	var req model.OpsWorkbenchBriefingReq
+	u := userClaims(ctx)
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.OwnerID = u.Uid
+		req.IsAdmin = u.Username == "admin"
+		if !req.MineOnly && !req.IsAdmin {
+			// 非管理员默认只看本人
+			req.MineOnly = true
+		}
+		return h.workbenchSvc.Briefing(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) CreateReminderDraft(ctx *gin.Context) {
+	var req model.OpsReminderDraftReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.workbenchSvc.DraftReminder(ctx.Request.Context(), &req)
 	})
 }
 
@@ -182,6 +231,23 @@ func (h *OpsHandler) ChangeCustomerStage(ctx *gin.Context) {
 	var req model.ChangeOpsCustomerStageReq
 	base.HandleRequest(ctx, &req, func() (any, error) {
 		return nil, h.customerSvc.ChangeStage(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) GetVendorProfile(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return h.customerSvc.GetVendorProfile(ctx.Request.Context(), id)
+	})
+}
+func (h *OpsHandler) UpsertVendorProfile(ctx *gin.Context) {
+	var req model.UpsertOpsVendorProfileReq
+	u := userClaims(ctx)
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.OperatorID, req.OperatorName = u.Uid, u.Username
+		return nil, h.customerSvc.UpsertVendorProfile(ctx.Request.Context(), &req)
 	})
 }
 func (h *OpsHandler) CreateFollowup(ctx *gin.Context) {
@@ -463,6 +529,17 @@ func (h *OpsHandler) UpdateActivation(ctx *gin.Context) {
 		return nil, h.bizSvc.UpdateActivation(ctx.Request.Context(), &req)
 	})
 }
+func (h *OpsHandler) FeedbackActivation(ctx *gin.Context) {
+	var req model.FeedbackOpsActivationReq
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	req.ID = id
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return nil, h.bizSvc.FeedbackActivation(ctx.Request.Context(), &req)
+	})
+}
 func (h *OpsHandler) DeleteActivation(ctx *gin.Context) {
 	id, err := base.GetParamID(ctx)
 	if err != nil {
@@ -660,6 +737,108 @@ func (h *OpsHandler) PreviewReminder(ctx *gin.Context) {
 func (h *OpsHandler) ScanReminder(ctx *gin.Context) {
 	base.HandleRequest(ctx, nil, func() (any, error) {
 		return h.reminderSvc.RunScan(ctx.Request.Context())
+	})
+}
+func (h *OpsHandler) ListReminderTask(ctx *gin.Context) {
+	var req model.ListOpsReminderTaskReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.reminderSvc.ListTasks(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) CreateReminderTask(ctx *gin.Context) {
+	var req model.CreateOpsReminderTaskReq
+	u := userClaims(ctx)
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.CreatorID, req.CreatorName = u.Uid, u.Username
+		return nil, h.reminderSvc.CreateTask(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) UpdateReminderTask(ctx *gin.Context) {
+	var req model.UpdateOpsReminderTaskReq
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	req.ID = id
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return nil, h.reminderSvc.UpdateTask(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) DeleteReminderTask(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return nil, h.reminderSvc.DeleteTask(ctx.Request.Context(), id)
+	})
+}
+func (h *OpsHandler) ListReminderDelivery(ctx *gin.Context) {
+	var req model.ListOpsReminderDeliveryReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.reminderSvc.ListDeliveries(ctx.Request.Context(), &req)
+	})
+}
+
+func (h *OpsHandler) ListSurvey(ctx *gin.Context) {
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return h.surveySvc.ListSurveys(ctx.Request.Context())
+	})
+}
+func (h *OpsHandler) SubmitSurvey(ctx *gin.Context) {
+	var req model.SubmitOpsSurveyReq
+	u := userClaims(ctx)
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.OperatorID, req.OperatorName = u.Uid, u.Username
+		return nil, h.surveySvc.Submit(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) ListSurveyResponse(ctx *gin.Context) {
+	var req model.ListOpsSurveyResponseReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.surveySvc.ListResponses(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) CreateSurveyInvite(ctx *gin.Context) {
+	var req model.CreateOpsSurveyInviteReq
+	u := userClaims(ctx)
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.OperatorID, req.OperatorName = u.Uid, u.Username
+		return h.surveySvc.CreateInvite(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) ListSurveyInvite(ctx *gin.Context) {
+	var req model.ListOpsSurveyInviteReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.surveySvc.ListInvites(ctx.Request.Context(), &req)
+	})
+}
+
+func (h *OpsHandler) ListContractItem(ctx *gin.Context) {
+	var req model.ListOpsContractItemReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.bizSvc.ListContractItems(ctx.Request.Context(), req.ContractID)
+	})
+}
+func (h *OpsHandler) CreateContractItem(ctx *gin.Context) {
+	var req model.CreateOpsContractItemReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return nil, h.bizSvc.CreateContractItem(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) DeleteContractItem(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return nil, h.bizSvc.DeleteContractItem(ctx.Request.Context(), id)
+	})
+}
+
+func (h *OpsHandler) GenerateMonthlyBilling(ctx *gin.Context) {
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return h.billingSvc.GenerateMonthlyDrafts(ctx.Request.Context())
 	})
 }
 

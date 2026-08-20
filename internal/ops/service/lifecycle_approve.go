@@ -10,6 +10,7 @@ import (
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	opsUtils "github.com/GoSimplicity/AI-CloudOps/internal/ops/utils"
+	"github.com/spf13/viper"
 )
 
 func (s *opsBizService) GetLifecycleApproveContext(ctx context.Context, instanceID int) (*model.OpsLifecycleApproveContext, error) {
@@ -69,6 +70,13 @@ func (s *opsBizService) GetLifecycleApproveContext(ctx context.Context, instance
 	}); err == nil && len(settlements) > 0 {
 		out.LatestSettlement = settlements[0]
 	}
+	if acts, _, err := s.activationDAO.List(ctx, &model.ListOpsActivationReq{
+		ListReq: model.ListReq{Page: 1, Size: 1}, CustomerID: customerID,
+	}); err == nil && len(acts) > 0 {
+		out.LatestActivation = acts[0]
+	}
+	out.VendorProfileURL = strings.TrimSpace(viper.GetString("ops.vendor_profile_url"))
+	out.VendorProfileDone = customer.VendorProfileDone
 	return out, nil
 }
 
@@ -119,12 +127,20 @@ func (s *opsBizService) applyLifecycleNodePayload(ctx context.Context, nodeKey s
 		return s.applyIntentNode(ctx, customerID, payload, operatorID, operatorName)
 	case model.OpsLifecycleStepTrial:
 		return s.applyTrialNode(ctx, customerID, payload, operatorID, operatorName)
+	case model.OpsLifecycleStepTrialContract:
+		return s.applyTrialContractNode(ctx, customerID, payload, operatorID, operatorName)
+	case model.OpsLifecycleStepOpenRequest:
+		return s.applyOpenRequestNode(ctx, customerID, payload, operatorID, operatorName)
+	case model.OpsLifecycleStepOpenFeedback:
+		return s.applyOpenFeedbackNode(ctx, customerID, payload, operatorID, operatorName)
 	case model.OpsLifecycleStepTrialAccept:
 		return s.applyTrialAcceptNode(ctx, customerID, payload)
 	case model.OpsLifecycleStepContract:
 		return s.applyContractNode(ctx, customerID, payload, operatorID, operatorName)
 	case model.OpsLifecycleStepSettlement:
 		return s.applySettlementNode(ctx, customerID, payload, operatorID, operatorName)
+	case model.OpsLifecycleStepInvoice:
+		return s.applyInvoiceNode(ctx, customerID, payload, operatorID, operatorName)
 	case model.OpsLifecycleStepPayment:
 		return s.applyPaymentNode(ctx, customerID, payload, operatorID, operatorName)
 	default:
@@ -210,9 +226,76 @@ func (s *opsBizService) applyTrialAcceptNode(ctx context.Context, customerID int
 		return fmt.Errorf("更新试用验收失败: %w", err)
 	}
 	_ = s.trialDAO.UpdateStatus(ctx, trial.ID, model.OpsTrialStatusEnded)
-	// 试用验收/转正评估通过后进入正式阶段
-	_ = s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageFormal, "")
+	// 仅明确转正时进入正式阶段
+	if convertIntent == "strong" {
+		_ = s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageFormal, "")
+	}
 	return nil
+}
+
+func (s *opsBizService) applyTrialContractNode(ctx context.Context, customerID int, payload model.JSONMap, operatorID int, operatorName string) error {
+	payload["type"] = model.OpsContractTypeTrial
+	return s.applyContractNode(ctx, customerID, payload, operatorID, operatorName)
+}
+
+func (s *opsBizService) applyOpenRequestNode(ctx context.Context, customerID int, payload model.JSONMap, operatorID int, operatorName string) error {
+	title := strings.TrimSpace(payloadString(payload, "title"))
+	if title == "" {
+		title = strings.TrimSpace(payloadString(payload, "activation_title"))
+	}
+	if title == "" {
+		return fmt.Errorf("请填写开通申请标题")
+	}
+	contractID := payloadInt(payload, "contract_id")
+	if contractID <= 0 {
+		contracts, _, err := s.contractDAO.List(ctx, &model.ListOpsContractReq{
+			ListReq: model.ListReq{Page: 1, Size: 1}, CustomerID: customerID,
+		})
+		if err != nil || len(contracts) == 0 {
+			return fmt.Errorf("未找到合同，请先完成合同签约节点")
+		}
+		contractID = contracts[0].ID
+	}
+	return s.activationDAO.Create(ctx, &model.OpsActivation{
+		CustomerID: customerID, ContractID: contractID, Title: title,
+		ResourceSummary: payloadString(payload, "resource_summary"),
+		Purpose:         payloadString(payload, "purpose"),
+		Status:          model.OpsActivationStatusPending,
+		OperatorID:      operatorID, OperatorName: operatorName,
+	})
+}
+
+func (s *opsBizService) applyOpenFeedbackNode(ctx context.Context, customerID int, payload model.JSONMap, operatorID int, operatorName string) error {
+	account := strings.TrimSpace(payloadString(payload, "feedback_account"))
+	if account == "" {
+		return fmt.Errorf("请填写开通账号")
+	}
+	var act *model.OpsActivation
+	if aid := payloadInt(payload, "activation_id"); aid > 0 {
+		item, err := s.activationDAO.GetByID(ctx, aid)
+		if err != nil {
+			return err
+		}
+		act = item
+	} else {
+		items, _, err := s.activationDAO.List(ctx, &model.ListOpsActivationReq{
+			ListReq: model.ListReq{Page: 1, Size: 1}, CustomerID: customerID,
+		})
+		if err != nil || len(items) == 0 {
+			return fmt.Errorf("未找到开通申请单，请先完成开通申请节点")
+		}
+		act = items[0]
+	}
+	now := time.Now()
+	act.FeedbackAccount = account
+	act.FeedbackTenant = payloadString(payload, "feedback_tenant")
+	act.FeedbackEndpoint = payloadString(payload, "feedback_endpoint")
+	act.FeedbackRemark = payloadString(payload, "feedback_remark")
+	act.Status = model.OpsActivationStatusActive
+	act.ActivatedAt = &now
+	act.OperatorID = operatorID
+	act.OperatorName = operatorName
+	return s.activationDAO.Update(ctx, act)
 }
 
 func (s *opsBizService) applyContractNode(ctx context.Context, customerID int, payload model.JSONMap, operatorID int, operatorName string) error {
@@ -250,45 +333,20 @@ func (s *opsBizService) applyContractNode(ctx context.Context, customerID int, p
 		autoRenew = 2
 	}
 	contract := &model.OpsContract{
-		CustomerID:      customerID,
-		TrialID:         trialID,
-		Type:            contractType,
-		Title:           title,
-		BillingMode:     payloadString(payload, "billing_mode"),
-		UnitPrice:       payloadFloat(payload, "unit_price"),
-		BillingCycle:    payloadString(payload, "billing_cycle"),
-		PaymentTermDays: term,
-		StartAt:         startAt,
-		EndAt:           endAt,
-		AutoRenew:       autoRenew,
-		Status:          model.OpsContractStatusActive,
-		Remark:          payloadString(payload, "remark"),
-		OperatorID:      operatorID,
-		OperatorName:    operatorName,
+		CustomerID: customerID, TrialID: trialID, Type: contractType, Title: title,
+		ProductType: payloadString(payload, "product_type"), BillingMode: payloadString(payload, "billing_mode"),
+		UnitPrice: payloadFloat(payload, "unit_price"), BillingCycle: payloadString(payload, "billing_cycle"),
+		PaymentMethod: payloadString(payload, "payment_method"), PaymentTermDays: term,
+		StartAt: startAt, EndAt: endAt, AutoRenew: autoRenew,
+		Status: model.OpsContractStatusActive, Remark: payloadString(payload, "remark"),
+		OperatorID: operatorID, OperatorName: operatorName,
 	}
 	if err := s.contractDAO.Create(ctx, contract); err != nil {
 		return fmt.Errorf("创建合同失败: %w", err)
 	}
-	actTitle := strings.TrimSpace(payloadString(payload, "activation_title"))
-	if actTitle == "" {
-		actTitle = "开通-" + title
+	if contractType == model.OpsContractTypeFormal {
+		_ = s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageFormal, "")
 	}
-	now := time.Now()
-	act := &model.OpsActivation{
-		CustomerID:      customerID,
-		ContractID:      contract.ID,
-		Title:           actTitle,
-		ResourceSummary: payloadString(payload, "resource_summary"),
-		Purpose:         payloadString(payload, "activation_purpose"),
-		Status:          model.OpsActivationStatusActive,
-		ActivatedAt:     &now,
-		OperatorID:      operatorID,
-		OperatorName:    operatorName,
-	}
-	if err := s.activationDAO.Create(ctx, act); err != nil {
-		return fmt.Errorf("创建开通单失败: %w", err)
-	}
-	_ = s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageFormal, "")
 	return nil
 }
 
@@ -338,6 +396,41 @@ func (s *opsBizService) applySettlementNode(ctx context.Context, customerID int,
 	return nil
 }
 
+func (s *opsBizService) applyInvoiceNode(ctx context.Context, customerID int, payload model.JSONMap, operatorID int, operatorName string) error {
+	settlementID := payloadInt(payload, "settlement_id")
+	if settlementID <= 0 {
+		items, _, err := s.settlementDAO.List(ctx, &model.ListOpsSettlementReq{
+			ListReq: model.ListReq{Page: 1, Size: 1}, CustomerID: customerID,
+		})
+		if err != nil || len(items) == 0 {
+			return fmt.Errorf("未找到结算单，请先完成「结算确认」节点登记")
+		}
+		settlementID = items[0].ID
+	}
+	amount := payloadFloat(payload, "invoice_amount")
+	if amount <= 0 {
+		amount = payloadFloat(payload, "amount")
+	}
+	if amount <= 0 {
+		return fmt.Errorf("请填写开票金额")
+	}
+	issuedAt, err := parsePayloadTime(payload, "issued_at")
+	if err != nil {
+		return err
+	}
+	inv := &model.OpsInvoice{
+		CustomerID: customerID, SettlementID: settlementID,
+		InvoiceNo: payloadString(payload, "invoice_no"), InvoiceType: payloadString(payload, "invoice_type"),
+		Amount: amount, IssuedAt: issuedAt, Status: model.OpsInvoiceStatusIssued,
+		OperatorID: operatorID, OperatorName: operatorName,
+	}
+	if err := s.invoiceDAO.Create(ctx, inv); err != nil {
+		return fmt.Errorf("创建发票失败: %w", err)
+	}
+	_ = s.settlementDAO.UpdateStatus(ctx, settlementID, model.OpsSettlementStatusInvoiced)
+	return nil
+}
+
 func (s *opsBizService) applyPaymentNode(ctx context.Context, customerID int, payload model.JSONMap, operatorID int, operatorName string) error {
 	settlementID := payloadInt(payload, "settlement_id")
 	if settlementID <= 0 {
@@ -353,44 +446,14 @@ func (s *opsBizService) applyPaymentNode(ctx context.Context, customerID int, pa
 	if amount <= 0 {
 		return fmt.Errorf("请填写回款金额")
 	}
-	issuedAt, err := parsePayloadTime(payload, "issued_at")
-	if err != nil {
-		return err
-	}
-	invAmount := payloadFloat(payload, "invoice_amount")
-	if invAmount <= 0 {
-		invAmount = amount
-	}
-	inv := &model.OpsInvoice{
-		CustomerID:   customerID,
-		SettlementID: settlementID,
-		InvoiceNo:    payloadString(payload, "invoice_no"),
-		InvoiceType:  payloadString(payload, "invoice_type"),
-		Amount:       invAmount,
-		IssuedAt:     issuedAt,
-		Status:       model.OpsInvoiceStatusIssued,
-		OperatorID:   operatorID,
-		OperatorName: operatorName,
-	}
-	if err := s.invoiceDAO.Create(ctx, inv); err != nil {
-		return fmt.Errorf("创建发票失败: %w", err)
-	}
-	_ = s.settlementDAO.UpdateStatus(ctx, settlementID, model.OpsSettlementStatusInvoiced)
-
 	paidAt, err := parsePayloadTime(payload, "paid_at")
 	if err != nil {
 		return err
 	}
 	payment := &model.OpsPayment{
-		CustomerID:   customerID,
-		SettlementID: settlementID,
-		Amount:       amount,
-		PaidAt:       paidAt,
-		BankRef:      payloadString(payload, "bank_ref"),
-		Status:       model.OpsPaymentStatusMatched,
-		Remark:       payloadString(payload, "remark"),
-		OperatorID:   operatorID,
-		OperatorName: operatorName,
+		CustomerID: customerID, SettlementID: settlementID, Amount: amount, PaidAt: paidAt,
+		BankRef: payloadString(payload, "bank_ref"), Status: model.OpsPaymentStatusMatched,
+		Remark: payloadString(payload, "remark"), OperatorID: operatorID, OperatorName: operatorName,
 	}
 	if err := s.paymentDAO.Create(ctx, payment); err != nil {
 		return fmt.Errorf("创建回款失败: %w", err)
@@ -441,14 +504,22 @@ func normalizeLifecycleStep(step *model.ProcessStep) string {
 		return model.OpsLifecycleStepIntent
 	case id == model.OpsLifecycleStepTrialAccept || strings.Contains(name, "验收") || strings.Contains(name, "转正"):
 		return model.OpsLifecycleStepTrialAccept
+	case id == model.OpsLifecycleStepTrialContract || (strings.Contains(name, "试用") && strings.Contains(name, "合同")):
+		return model.OpsLifecycleStepTrialContract
+	case id == model.OpsLifecycleStepOpenFeedback || strings.Contains(name, "开通回馈") || strings.Contains(name, "账号回馈"):
+		return model.OpsLifecycleStepOpenFeedback
+	case id == model.OpsLifecycleStepOpenRequest || strings.Contains(name, "开通申请"):
+		return model.OpsLifecycleStepOpenRequest
 	case id == model.OpsLifecycleStepTrial || (strings.Contains(name, "试用") && strings.Contains(name, "审批")):
 		return model.OpsLifecycleStepTrial
-	case id == model.OpsLifecycleStepContract || strings.Contains(name, "合同") || strings.Contains(name, "开通"):
-		return model.OpsLifecycleStepContract
+	case id == model.OpsLifecycleStepInvoice || (strings.Contains(name, "开票") && !strings.Contains(name, "回款")):
+		return model.OpsLifecycleStepInvoice
+	case id == model.OpsLifecycleStepPayment || strings.Contains(name, "回款"):
+		return model.OpsLifecycleStepPayment
 	case id == model.OpsLifecycleStepSettlement || strings.Contains(name, "结算"):
 		return model.OpsLifecycleStepSettlement
-	case id == model.OpsLifecycleStepPayment || strings.Contains(name, "开票") || strings.Contains(name, "回款"):
-		return model.OpsLifecycleStepPayment
+	case id == model.OpsLifecycleStepContract || strings.Contains(name, "正式合同") || (strings.Contains(name, "合同") && !strings.Contains(name, "试用")):
+		return model.OpsLifecycleStepContract
 	default:
 		return id
 	}
