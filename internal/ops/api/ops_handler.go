@@ -23,6 +23,8 @@ type OpsHandler struct {
 	surveySvc     service.OpsSurveyService
 	billingSvc    service.OpsBillingService
 	workbenchSvc  service.OpsWorkbenchService
+	managerRptSvc service.OpsManagerReportService
+	publicFaultSvc service.OpsPublicFaultService
 }
 
 func NewOpsHandler(
@@ -36,24 +38,28 @@ func NewOpsHandler(
 	surveySvc service.OpsSurveyService,
 	billingSvc service.OpsBillingService,
 	workbenchSvc service.OpsWorkbenchService,
+	managerRptSvc service.OpsManagerReportService,
+	publicFaultSvc service.OpsPublicFaultService,
 ) *OpsHandler {
 	return &OpsHandler{
 		customerSvc: customerSvc, leadSvc: leadSvc, bizSvc: bizSvc,
 		financeSvc: financeSvc, reminderSvc: reminderSvc, attachmentSvc: attachmentSvc,
 		dashboardSvc: dashboardSvc, surveySvc: surveySvc, billingSvc: billingSvc,
-		workbenchSvc: workbenchSvc,
+		workbenchSvc: workbenchSvc, managerRptSvc: managerRptSvc, publicFaultSvc: publicFaultSvc,
 	}
 }
 
 func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 	h.registerPublicVisitorRoutes(server)
 	h.registerPublicSurveyRoutes(server)
+	h.registerPublicFaultRoutes(server)
 
 	g := server.Group("/api/ops")
 	{
 		g.GET("/dashboard/overview", h.GetDashboardOverview)
 		g.GET("/workbench/briefing", h.GetWorkbenchBriefing)
 		g.POST("/workbench/reminder-draft", h.CreateReminderDraft)
+		g.GET("/manager/weekly-report", h.GetManagerWeeklyReport)
 
 		g.POST("/customer/create", h.CreateCustomer)
 		g.PUT("/customer/update/:id", h.UpdateCustomer)
@@ -61,6 +67,8 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 		g.GET("/customer/detail/:id", h.GetCustomer)
 		g.GET("/customer/list", h.ListCustomer)
 		g.POST("/customer/change-stage", h.ChangeCustomerStage)
+		g.PUT("/customer/report/:id", h.UpdateCustomerReport)
+		g.POST("/customer/report/:id/rotate-secret", h.RotateCustomerReportSecret)
 		g.GET("/customer/vendor-profile/:id", h.GetVendorProfile)
 		g.POST("/customer/vendor-profile", h.UpsertVendorProfile)
 		g.POST("/followup/create", h.CreateFollowup)
@@ -182,6 +190,17 @@ func (h *OpsHandler) CreateReminderDraft(ctx *gin.Context) {
 		return h.workbenchSvc.DraftReminder(ctx.Request.Context(), &req)
 	})
 }
+func (h *OpsHandler) GetManagerWeeklyReport(ctx *gin.Context) {
+	u := userClaims(ctx)
+	if u.Username != "admin" {
+		base.ForbiddenError(ctx, "仅超管可查看管理者周报")
+		return
+	}
+	var req model.OpsManagerWeeklyReportReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.managerRptSvc.WeeklyReport(ctx.Request.Context(), req.Days, req.Refresh)
+	})
+}
 
 func (h *OpsHandler) CreateCustomer(ctx *gin.Context) {
 	var req model.CreateOpsCustomerReq
@@ -231,6 +250,26 @@ func (h *OpsHandler) ChangeCustomerStage(ctx *gin.Context) {
 	var req model.ChangeOpsCustomerStageReq
 	base.HandleRequest(ctx, &req, func() (any, error) {
 		return nil, h.customerSvc.ChangeStage(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) UpdateCustomerReport(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	var req model.UpdateOpsCustomerReportReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		req.ID = id
+		return nil, h.customerSvc.UpdateReportSettings(ctx.Request.Context(), &req)
+	})
+}
+func (h *OpsHandler) RotateCustomerReportSecret(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return h.customerSvc.RotateReportSecret(ctx.Request.Context(), id)
 	})
 }
 func (h *OpsHandler) GetVendorProfile(ctx *gin.Context) {

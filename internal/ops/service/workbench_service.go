@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -350,32 +351,22 @@ func firstNonEmpty(a, b string) string {
 }
 
 func useLLMDraft() bool {
-	return strings.TrimSpace(viper.GetString("external.llm.api_key")) != "" ||
-		strings.TrimSpace(viper.GetString("LLM_API_KEY")) != "" ||
+	return strings.TrimSpace(os.Getenv("LLM_API_KEY")) != "" ||
+		strings.TrimSpace(viper.GetString("external.llm.api_key")) != "" ||
 		strings.TrimSpace(viper.GetString("llm.api_key")) != ""
 }
 
 func (s *opsWorkbenchService) generateLLMDraft(ctx context.Context, req *model.OpsReminderDraftReq, channel string) (string, error) {
-	apiKey := strings.TrimSpace(viper.GetString("external.llm.api_key"))
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(viper.GetString("llm.api_key"))
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(viper.GetString("external.llm.base_url")), "/")
-	if baseURL == "" {
-		baseURL = strings.TrimRight(strings.TrimSpace(viper.GetString("llm.base_url")), "/")
-	}
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
-	}
-	if apiKey == "" {
-		return "", fmt.Errorf("未配置 LLM")
+	apiKey, baseURL, model, err := resolveLLMConfig()
+	if err != nil {
+		return "", err
 	}
 	prompt := fmt.Sprintf(
 		"你是 CacOps 运营助手。请为渠道「%s」写一条简短中文提醒正文（不要标题），对象客户「%s」，事项类型「%s」，摘要「%s」，建议「%s」，到期「%s」。语气专业、可直接发给内部负责人，不要虚构合同金额。",
 		channel, req.CustomerName, req.Type, req.Summary, req.Suggestion, req.DueAt,
 	)
 	payload := map[string]any{
-		"model": "gpt-4o-mini",
+		"model": model,
 		"messages": []map[string]string{
 			{"role": "system", "content": "你只输出提醒正文，不要解释。"},
 			{"role": "user", "content": prompt},
@@ -396,7 +387,7 @@ func (s *opsWorkbenchService) generateLLMDraft(ctx context.Context, req *model.O
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("llm status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("llm status %d model=%s: %s", resp.StatusCode, model, truncateLLMErrBody(body))
 	}
 	var parsed struct {
 		Choices []struct {

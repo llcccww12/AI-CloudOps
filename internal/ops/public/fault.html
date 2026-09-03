@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>CacOps 故障报修</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #0f4c81;
+      --primary-hover: #0c3d68;
+      --border: #e5e7eb;
+      --danger: #b91c1c;
+      --ok: #047857;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #e8f0f8 0%, var(--bg) 40%, #eef2f7 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+    .hero { text-align: center; margin-bottom: 20px; }
+    .hero h1 { margin: 0 0 8px; font-size: 1.5rem; color: var(--primary); }
+    .hero p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 18px;
+      box-shadow: 0 8px 24px rgba(15, 76, 129, 0.06);
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+    label { display: block; font-size: 0.875rem; margin-bottom: 6px; color: #374151; }
+    .req::after { content: " *"; color: var(--danger); }
+    .field { margin-bottom: 14px; }
+    input, select, textarea {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.95rem; background: #fff; color: var(--text);
+    }
+    textarea { resize: vertical; min-height: 96px; }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+    button {
+      width: 100%; border: none; border-radius: 8px; padding: 12px 16px; font-size: 1rem;
+      background: var(--primary); color: #fff; cursor: pointer;
+    }
+    button:hover { background: var(--primary-hover); }
+    button:disabled { opacity: 0.65; cursor: not-allowed; }
+    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; display: none; font-size: 0.9rem; }
+    .msg.error { display: block; background: #fef2f2; color: var(--danger); }
+    .msg.ok { display: block; background: #ecfdf5; color: var(--ok); }
+    .success-view { text-align: center; padding: 28px 12px; display: none; }
+    .code-box {
+      margin: 16px 0; padding: 14px; border-radius: 8px; background: #f8fafc;
+      border: 1px dashed var(--border); font-size: 1.05rem;
+    }
+    .link-row { text-align: center; margin-top: 12px; font-size: 0.9rem; }
+    .link-row a { color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>CacOps 故障报修</h1>
+      <p>请填写组织编码与密钥后提交故障，提交成功后可凭工单号查询进度</p>
+    </div>
+
+    <div id="formCard" class="card">
+      <form id="faultForm">
+        <div class="row">
+          <div class="field">
+            <label class="req" for="report_code">组织编码</label>
+            <input id="report_code" name="report_code" maxlength="64" required placeholder="由服务商提供" />
+          </div>
+          <div class="field">
+            <label class="req" for="report_secret">组织密钥</label>
+            <input id="report_secret" name="report_secret" type="password" maxlength="64" required />
+          </div>
+        </div>
+        <div class="field">
+          <label class="req" for="title">故障标题</label>
+          <input id="title" name="title" maxlength="200" required placeholder="简要描述故障现象" />
+        </div>
+        <div class="field">
+          <label class="req" for="description">故障描述</label>
+          <textarea id="description" name="description" maxlength="2000" required placeholder="请描述发生时间、影响范围、已尝试操作等"></textarea>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label class="req" for="priority">紧急程度</label>
+            <select id="priority" name="priority" required>
+              <option value="1">高 - 业务中断</option>
+              <option value="2" selected>中 - 部分受影响</option>
+              <option value="3">低 - 可延后处理</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="req" for="reporter_name">报障人</label>
+            <input id="reporter_name" name="reporter_name" maxlength="100" required />
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label class="req" for="reporter_phone">联系电话</label>
+            <input id="reporter_phone" name="reporter_phone" maxlength="50" required />
+          </div>
+          <div class="field">
+            <label for="reporter_email">邮箱</label>
+            <input id="reporter_email" name="reporter_email" type="email" maxlength="120" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="files">附件（可选）</label>
+          <input id="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.zip" />
+          <div class="hint">可上传截图或日志，单文件大小受服务器限制</div>
+        </div>
+        <button id="submitBtn" type="submit">提交报障</button>
+        <div id="msg" class="msg"></div>
+      </form>
+      <div class="link-row"><a href="/public/fault/query">已有工单号？查询进度</a></div>
+    </div>
+
+    <div id="successView" class="card success-view">
+      <h2 style="color:var(--ok)">报障已提交</h2>
+      <p>请妥善保存以下信息，用于查询处理进度</p>
+      <div class="code-box">
+        <div>工单号：<strong id="serialNo"></strong></div>
+        <div style="margin-top:8px">查询码：<strong id="queryCode"></strong></div>
+      </div>
+      <button type="button" id="copyBtn">复制工单号与查询码</button>
+      <div class="link-row" style="margin-top:16px"><a href="/public/fault/query">前往查询页</a></div>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    if (params.get('code')) document.getElementById('report_code').value = params.get('code');
+
+    const form = document.getElementById('faultForm');
+    const msg = document.getElementById('msg');
+    const submitBtn = document.getElementById('submitBtn');
+    const fileInput = document.getElementById('files');
+
+    function showError(text) {
+      msg.className = 'msg error';
+      msg.textContent = text;
+    }
+    function clearMsg() {
+      msg.className = 'msg';
+      msg.textContent = '';
+    }
+
+    async function uploadFiles() {
+      const files = Array.from(fileInput.files || []);
+      const ids = [];
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch('/api/public/fault/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || (data.code !== undefined && data.code !== 0 && data.code !== 200)) {
+          throw new Error(data.message || ('上传失败：' + file.name));
+        }
+        const item = data.data || data;
+        if (!item || !item.id) throw new Error('上传返回异常');
+        ids.push(item.id);
+      }
+      return ids;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearMsg();
+      submitBtn.disabled = true;
+      submitBtn.textContent = '提交中...';
+      try {
+        const attachmentIds = await uploadFiles();
+        const payload = {
+          report_code: form.report_code.value.trim(),
+          report_secret: form.report_secret.value,
+          title: form.title.value.trim(),
+          description: form.description.value.trim(),
+          priority: Number(form.priority.value),
+          reporter_name: form.reporter_name.value.trim(),
+          reporter_phone: form.reporter_phone.value.trim(),
+          reporter_email: form.reporter_email.value.trim(),
+          attachment_ids: attachmentIds,
+        };
+        const res = await fetch('/api/public/fault/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || (data.code !== undefined && data.code !== 0 && data.code !== 200)) {
+          throw new Error(data.message || '提交失败');
+        }
+        const result = data.data || data;
+        document.getElementById('formCard').style.display = 'none';
+        document.getElementById('successView').style.display = 'block';
+        document.getElementById('serialNo').textContent = result.serial_number || '';
+        document.getElementById('queryCode').textContent = result.query_code || '';
+        document.getElementById('copyBtn').onclick = () => {
+          const text = '工单号：' + result.serial_number + '\n查询码：' + result.query_code;
+          navigator.clipboard.writeText(text).catch(() => {});
+        };
+      } catch (err) {
+        showError(err.message || '提交失败，请稍后重试');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '提交报障';
+      }
+    });
+  </script>
+</body>
+</html>

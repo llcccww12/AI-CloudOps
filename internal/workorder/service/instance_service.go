@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
@@ -49,6 +50,7 @@ var (
 type InstanceService interface {
 	CreateInstance(ctx context.Context, req *model.CreateWorkorderInstanceReq) error
 	CreateInstanceFromTemplate(ctx context.Context, templateID int, req *model.CreateWorkorderInstanceFromTemplateReq) (int, error)
+	CreatePublicFaultInstance(ctx context.Context, templateID int, req *model.CreatePublicFaultInstanceReq) (*model.WorkorderInstance, error)
 	UpdateInstance(ctx context.Context, req *model.UpdateWorkorderInstanceReq) error
 	DeleteInstance(ctx context.Context, id int, operatorID int) error
 	GetInstance(ctx context.Context, id int) (*model.WorkorderInstance, error)
@@ -293,6 +295,107 @@ func (s *instanceService) CreateInstanceFromTemplate(ctx context.Context, templa
 	s.sendNotificationAsync(instance.ID, model.EventTypeInstanceCreated, fmt.Sprintf("从模板 %s 创建", template.Name))
 
 	return instance.ID, nil
+}
+
+func (s *instanceService) CreatePublicFaultInstance(ctx context.Context, templateID int, req *model.CreatePublicFaultInstanceReq) (*model.WorkorderInstance, error) {
+	if req == nil {
+		return nil, fmt.Errorf("请求参数无效")
+	}
+	if req.Priority < model.PriorityHigh || req.Priority > model.PriorityLow {
+		return nil, fmt.Errorf("优先级无效")
+	}
+	if req.OperatorID <= 0 {
+		return nil, fmt.Errorf("操作人无效")
+	}
+
+	template, err := s.templateDao.GetTemplate(ctx, templateID)
+	if err != nil {
+		return nil, fmt.Errorf("工单模板不存在或已禁用")
+	}
+	if template.Status != model.TemplateStatusEnabled {
+		return nil, fmt.Errorf("只能使用启用状态的模板创建工单")
+	}
+
+	process, err := s.processDao.GetProcessByID(ctx, template.ProcessID)
+	if err != nil {
+		return nil, fmt.Errorf("流程不存在或已停用")
+	}
+	if process.Status != model.ProcessStatusPublished {
+		return nil, fmt.Errorf("只能使用已发布的流程创建工单")
+	}
+
+	formData := make(model.JSONMap)
+	if template.DefaultValues != nil {
+		for key, value := range template.DefaultValues {
+			formData[key] = value
+		}
+	}
+	if req.FormData != nil {
+		for key, value := range req.FormData {
+			formData[key] = value
+		}
+	}
+
+	serialNumber, err := s.dao.GenerateSerialNumber(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	title := fmt.Sprintf("[客户报障]%s-%s", strings.TrimSpace(req.Title), serialNumber)
+	customerID := req.OpsCustomerID
+
+	var currentStepID *string
+	var assigneeID *int
+	if process.Definition != nil {
+		var definition model.ProcessDefinition
+		definitionBytes, _ := json.Marshal(process.Definition)
+		if json.Unmarshal(definitionBytes, &definition) == nil {
+			for _, step := range definition.Steps {
+				if step.Type != model.ProcessStepTypeStart {
+					currentStepID = &step.ID
+					if len(step.AssigneeIDs) > 0 && step.AssigneeIDs[0] > 0 {
+						id := step.AssigneeIDs[0]
+						assigneeID = &id
+					}
+					break
+				}
+			}
+		}
+	}
+
+	instance := &model.WorkorderInstance{
+		Title:               title,
+		SerialNumber:        serialNumber,
+		ProcessID:           template.ProcessID,
+		CurrentStepID:       currentStepID,
+		FormData:            formData,
+		Status:              model.InstanceStatusPending,
+		Priority:            req.Priority,
+		OperatorID:          req.OperatorID,
+		OperatorName:        req.OperatorName,
+		AssigneeID:          assigneeID,
+		Description:         req.Description,
+		Tags:                model.StringList{"客户报障"},
+		Source:              model.WorkorderSourcePublicFault,
+		OpsCustomerID:       &customerID,
+		PublicQueryCodeHash: req.PublicQueryHash,
+		ReporterName:        req.ReporterName,
+		ReporterPhone:       req.ReporterPhone,
+		ReporterEmail:       req.ReporterEmail,
+	}
+
+	if err := s.dao.CreateInstance(ctx, instance); err != nil {
+		return nil, fmt.Errorf("创建工单实例失败: %w", err)
+	}
+
+	s.createFlowRecord(ctx, instance.ID, model.FlowActionSubmit, req.OperatorID, req.OperatorName,
+		model.InstanceStatusDraft, model.InstanceStatusPending, "", model.FlowRecordTypeSystem)
+	s.createTimelineRecord(ctx, instance.ID, model.TimelineActionCreate, req.OperatorID, req.OperatorName, "客户公网报障")
+	s.createTimelineRecord(ctx, instance.ID, model.TimelineActionSubmit, req.OperatorID, req.OperatorName, "客户公网报障已受理")
+
+	s.sendNotificationAsync(instance.ID, model.EventTypeInstanceSubmitted, "客户公网报障")
+
+	return instance, nil
 }
 
 func (s *instanceService) UpdateInstance(ctx context.Context, req *model.UpdateWorkorderInstanceReq) error {

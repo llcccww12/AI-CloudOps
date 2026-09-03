@@ -7,6 +7,8 @@ import (
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/ops/dao"
+	opsUtils "github.com/GoSimplicity/AI-CloudOps/internal/ops/utils"
+	userutils "github.com/GoSimplicity/AI-CloudOps/internal/system/utils"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +23,8 @@ type OpsCustomerService interface {
 	ListFollowups(ctx context.Context, req *model.ListOpsFollowupReq) (*model.ListResp[*model.OpsFollowup], error)
 	GetVendorProfile(ctx context.Context, customerID int) (*model.OpsVendorProfile, error)
 	UpsertVendorProfile(ctx context.Context, req *model.UpsertOpsVendorProfileReq) error
+	UpdateReportSettings(ctx context.Context, req *model.UpdateOpsCustomerReportReq) error
+	RotateReportSecret(ctx context.Context, id int) (*model.RotateOpsCustomerReportSecretResp, error)
 }
 
 type opsCustomerService struct {
@@ -93,7 +97,12 @@ func (s *opsCustomerService) Delete(ctx context.Context, id int) error {
 }
 
 func (s *opsCustomerService) Get(ctx context.Context, id int) (*model.OpsCustomer, error) {
-	return s.customerDAO.GetByID(ctx, id)
+	c, err := s.customerDAO.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	maskCustomerReportFields(c)
+	return c, nil
 }
 
 func (s *opsCustomerService) List(ctx context.Context, req *model.ListOpsCustomerReq) (*model.ListResp[*model.OpsCustomer], error) {
@@ -101,7 +110,18 @@ func (s *opsCustomerService) List(ctx context.Context, req *model.ListOpsCustome
 	if err != nil {
 		return nil, err
 	}
+	for _, item := range items {
+		maskCustomerReportFields(item)
+	}
 	return &model.ListResp[*model.OpsCustomer]{Items: items, Total: total}, nil
+}
+
+func maskCustomerReportFields(c *model.OpsCustomer) {
+	if c == nil {
+		return
+	}
+	c.ReportSecretConfigured = c.ReportSecretHash != ""
+	c.ReportSecretHash = ""
 }
 
 var allowedStageTransitions = map[string]map[string]bool{
@@ -192,4 +212,46 @@ func (s *opsCustomerService) ListFollowups(ctx context.Context, req *model.ListO
 		return nil, err
 	}
 	return &model.ListResp[*model.OpsFollowup]{Items: items, Total: total}, nil
+}
+
+func (s *opsCustomerService) UpdateReportSettings(ctx context.Context, req *model.UpdateOpsCustomerReportReq) error {
+	if _, err := s.customerDAO.GetByID(ctx, req.ID); err != nil {
+		return err
+	}
+	code := strings.TrimSpace(req.ReportCode)
+	if code == "" {
+		return fmt.Errorf("组织编码不能为空")
+	}
+	existing, err := s.customerDAO.GetByReportCode(ctx, code)
+	if err == nil && existing != nil && existing.ID != req.ID {
+		return fmt.Errorf("组织编码已被其他客户使用")
+	}
+	return s.customerDAO.UpdateReportSettings(ctx, req.ID, code, req.ReportEnabled)
+}
+
+func (s *opsCustomerService) RotateReportSecret(ctx context.Context, id int) (*model.RotateOpsCustomerReportSecretResp, error) {
+	customer, err := s.customerDAO.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	secret := opsUtils.GenerateReportSecret()
+	hash, err := userutils.HashPassword(secret)
+	if err != nil {
+		return nil, fmt.Errorf("生成密钥失败: %w", err)
+	}
+	code := strings.TrimSpace(customer.ReportCode)
+	if code == "" {
+		code = opsUtils.GenerateReportCode(customer.ID)
+		if err := s.customerDAO.UpdateReportSettings(ctx, id, code, model.OpsReportEnabledYes); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.customerDAO.UpdateReportSecret(ctx, id, hash); err != nil {
+		return nil, err
+	}
+	return &model.RotateOpsCustomerReportSecretResp{
+		ReportCode:   code,
+		ReportSecret: secret,
+		Message:      "请立即保存密钥，关闭后将无法再次查看",
+	}, nil
 }

@@ -50,6 +50,11 @@ const (
 	InstanceListScopeArchive = "archive"
 )
 
+// 工单来源
+const (
+	WorkorderSourcePublicFault = "public_fault"
+)
+
 const (
 	AssignModeTransfer = "transfer" // 同节点转办/协同
 	AssignModeForward  = "forward"  // 流转到下一节点
@@ -83,6 +88,12 @@ type WorkorderInstance struct {
 	Tags          StringList `json:"tags" gorm:"column:tags;comment:标签"`
 	DueDate       *time.Time `json:"due_date" gorm:"column:due_date;index;comment:截止时间"`
 	CompletedAt   *time.Time `json:"completed_at" gorm:"column:completed_at;comment:完成时间"`
+	Source            string `json:"source" gorm:"column:source;type:varchar(32);index;comment:来源"`
+	OpsCustomerID     *int   `json:"ops_customer_id" gorm:"column:ops_customer_id;index;comment:运营客户ID"`
+	PublicQueryCodeHash string `json:"-" gorm:"column:public_query_code_hash;type:varchar(200);comment:公网查询码哈希"`
+	ReporterName      string `json:"reporter_name" gorm:"column:reporter_name;type:varchar(100);comment:报障人姓名"`
+	ReporterPhone     string `json:"reporter_phone" gorm:"column:reporter_phone;type:varchar(50);comment:报障人电话"`
+	ReporterEmail     string `json:"reporter_email" gorm:"column:reporter_email;type:varchar(120);comment:报障人邮箱"`
 
 	// 关联字段
 	Process  *WorkorderProcess           `json:"process,omitempty" gorm:"foreignKey:ProcessID;references:ID"`
@@ -135,6 +146,7 @@ type ListWorkorderInstanceReq struct {
 	Status    *int8  `json:"status" form:"status" binding:"omitempty,oneof=1 2 3 4 5 6"`
 	Priority  *int8  `json:"priority" form:"priority" binding:"omitempty,oneof=1 2 3"`
 	ProcessID *int   `json:"process_id" form:"process_id" binding:"omitempty,min=1"`
+	Source    string `json:"source" form:"source"`
 	Scope     string `json:"scope" form:"scope" binding:"omitempty,oneof=todo mine all archive"` // 待办/我发起/进行中/归档
 	UserID    int    `json:"-" form:"-"`                                                         // 服务端注入当前用户
 }

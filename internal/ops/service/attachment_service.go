@@ -89,7 +89,7 @@ func (s *opsAttachmentService) UploadPending(ctx context.Context, bizType string
 		return nil, fmt.Errorf("未选择文件")
 	}
 	switch bizType {
-	case model.OpsAttachmentBizExhibition:
+	case model.OpsAttachmentBizExhibition, model.OpsAttachmentBizPublicFault:
 	default:
 		return nil, fmt.Errorf("不支持的业务类型: %s", bizType)
 	}

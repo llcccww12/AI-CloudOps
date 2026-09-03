@@ -85,6 +85,7 @@ func Load() (*Config, *ExternalConfig, error) {
 	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, nil, fmt.Errorf("解析配置失败: %w", err)
 	}
+	applyNotificationEnvOverrides(cfg)
 
 	ext := &ExternalConfig{}
 	loadExternalConfig(ext)
@@ -249,4 +250,33 @@ func loadExternalConfig(ext *ExternalConfig) {
 	ext.Aliyun.AccessKeyID = os.Getenv("ALIYUN_ACCESS_KEY_ID")
 	ext.Aliyun.AccessKeySecret = os.Getenv("ALIYUN_ACCESS_KEY_SECRET")
 	ext.Tavily.APIKey = os.Getenv("TAVILY_API_KEY")
+}
+
+// applyNotificationEnvOverrides 确保 .env / 进程环境变量覆盖 yaml 占位符
+func applyNotificationEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Notification.Feishu == nil {
+		cfg.Notification.Feishu = &FeishuConfig{}
+	}
+	f := cfg.Notification.Feishu
+	if v := strings.TrimSpace(os.Getenv("NOTIFICATION_FEISHU_ENABLED")); v != "" {
+		f.Enabled = v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
+	}
+	if v := strings.TrimSpace(os.Getenv("NOTIFICATION_FEISHU_APP_ID")); v != "" {
+		f.AppID = v
+	}
+	if v := strings.TrimSpace(os.Getenv("NOTIFICATION_FEISHU_APP_SECRET")); v != "" {
+		f.AppSecret = v
+	}
+	if v := strings.TrimSpace(os.Getenv("NOTIFICATION_FEISHU_WEBHOOK_URL")); v != "" {
+		f.WebhookURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv("NOTIFICATION_FEISHU_PRIVATE_MESSAGE_API")); v != "" {
+		f.PrivateMessageAPI = v
+	}
+	if v := strings.TrimSpace(os.Getenv("NOTIFICATION_FEISHU_TENANT_ACCESS_TOKEN_API")); v != "" {
+		f.TenantAccessTokenAPI = v
+	}
 }

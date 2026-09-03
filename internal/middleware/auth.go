@@ -48,8 +48,13 @@ var skipAuthPaths = map[string]bool{
 	"/api/public/visitor/upload":       true,
 	"/api/public/survey/meta":          true,
 	"/api/public/survey/submit":        true,
+	"/api/public/fault/submit":         true,
+	"/api/public/fault/query":          true,
+	"/api/public/fault/upload":         true,
 	"/public/visitor":                  true,
 	"/public/survey":                   true,
+	"/public/fault":                    true,
+	"/public/fault/query":              true,
 	"/favicon.ico":                     true,
 }
 

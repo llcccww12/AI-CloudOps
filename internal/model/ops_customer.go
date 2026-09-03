@@ -44,6 +44,12 @@ const (
 	OpsCustomerSourcePartner    = "partner"
 )
 
+// 公网报障开关
+const (
+	OpsReportEnabledYes int8 = 1
+	OpsReportEnabledNo  int8 = 2
+)
+
 // OpsCustomer 运营客户主档
 type OpsCustomer struct {
 	Model
@@ -67,6 +73,11 @@ type OpsCustomer struct {
 	Remark         string     `json:"remark" gorm:"column:remark;type:text;comment:备注"`
 	OperatorID     int        `json:"operator_id" gorm:"column:operator_id;comment:创建人ID"`
 	OperatorName   string     `json:"operator_name" gorm:"column:operator_name;type:varchar(100);comment:创建人"`
+	ReportCode          string     `json:"report_code" gorm:"column:report_code;type:varchar(64);uniqueIndex;comment:公网报障组织编码"`
+	ReportSecretHash    string     `json:"-" gorm:"column:report_secret_hash;type:varchar(200);comment:公网报障密钥哈希"`
+	ReportEnabled       int8       `json:"report_enabled" gorm:"column:report_enabled;default:2;comment:是否开放公网报障1是2否"`
+	ReportSecretUpdatedAt *time.Time `json:"report_secret_updated_at,omitempty" gorm:"column:report_secret_updated_at;comment:报障密钥更新时间"`
+	ReportSecretConfigured bool     `json:"report_secret_configured" gorm:"-"`
 }
 
 func (OpsCustomer) TableName() string { return "cl_ops_customer" }
@@ -118,6 +129,18 @@ type ListOpsCustomerReq struct {
 	Stage   string `json:"stage" form:"stage"`
 	OwnerID int    `json:"owner_id" form:"owner_id"`
 	Source  string `json:"source" form:"source"`
+}
+
+type UpdateOpsCustomerReportReq struct {
+	ID           int    `json:"id" binding:"required,min=1"`
+	ReportCode   string `json:"report_code" binding:"required,min=2,max=64"`
+	ReportEnabled int8  `json:"report_enabled" binding:"required,oneof=1 2"`
+}
+
+type RotateOpsCustomerReportSecretResp struct {
+	ReportCode   string `json:"report_code"`
+	ReportSecret string `json:"report_secret"`
+	Message      string `json:"message"`
 }
 
 // OpsFollowup 客户跟进记录

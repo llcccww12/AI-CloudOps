@@ -3,6 +3,7 @@ package dao
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
@@ -20,6 +21,9 @@ type OpsCustomerDAO interface {
 	CountByStage(ctx context.Context, stage string) (int64, error)
 	CountClosedBetween(ctx context.Context, start, end time.Time) (int64, error)
 	ListRecentByStages(ctx context.Context, stages []string, limit int) ([]*model.OpsCustomer, error)
+	GetByReportCode(ctx context.Context, code string) (*model.OpsCustomer, error)
+	UpdateReportSettings(ctx context.Context, id int, code string, enabled int8) error
+	UpdateReportSecret(ctx context.Context, id int, hash string) error
 }
 
 type opsCustomerDAO struct {
@@ -162,6 +166,47 @@ func (d *opsCustomerDAO) ListRecentByStages(ctx context.Context, stages []string
 	}
 	err := q.Order("updated_at DESC").Limit(limit).Find(&items).Error
 	return items, err
+}
+
+func (d *opsCustomerDAO) GetByReportCode(ctx context.Context, code string) (*model.OpsCustomer, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, fmt.Errorf("组织编码无效")
+	}
+	var c model.OpsCustomer
+	if err := d.db.WithContext(ctx).Where("report_code = ?", code).First(&c).Error; err != nil {
+		return nil, fmt.Errorf("客户不存在: %w", err)
+	}
+	return &c, nil
+}
+
+func (d *opsCustomerDAO) UpdateReportSettings(ctx context.Context, id int, code string, enabled int8) error {
+	result := d.db.WithContext(ctx).Model(&model.OpsCustomer{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"report_code":    strings.TrimSpace(code),
+		"report_enabled": enabled,
+	})
+	if result.Error != nil {
+		return fmt.Errorf("更新报障配置失败: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("客户不存在")
+	}
+	return nil
+}
+
+func (d *opsCustomerDAO) UpdateReportSecret(ctx context.Context, id int, hash string) error {
+	now := time.Now()
+	result := d.db.WithContext(ctx).Model(&model.OpsCustomer{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"report_secret_hash":       hash,
+		"report_secret_updated_at": now,
+	})
+	if result.Error != nil {
+		return fmt.Errorf("更新报障密钥失败: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("客户不存在")
+	}
+	return nil
 }
 
 type OpsFollowupDAO interface {

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>CacOps 报障进度查询</title>
+  <style>
+    :root {
+      --bg: #f4f7fb; --card: #fff; --text: #1f2937; --muted: #6b7280;
+      --primary: #0f4c81; --border: #e5e7eb; --danger: #b91c1c; --ok: #047857;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+    .hero { text-align: center; margin-bottom: 20px; }
+    .hero h1 { margin: 0 0 8px; font-size: 1.4rem; color: var(--primary); }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 20px 18px; box-shadow: 0 8px 24px rgba(15, 76, 129, 0.06);
+    }
+    label { display: block; font-size: 0.875rem; margin-bottom: 6px; }
+    .field { margin-bottom: 14px; }
+    input {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    }
+    button {
+      width: 100%; border: none; border-radius: 8px; padding: 12px; background: var(--primary);
+      color: #fff; font-size: 1rem; cursor: pointer;
+    }
+    .msg { margin-top: 12px; padding: 10px; border-radius: 8px; display: none; }
+    .msg.error { display: block; background: #fef2f2; color: var(--danger); }
+    .result { margin-top: 16px; display: none; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #eef2ff; font-size: 0.85rem; }
+    .timeline { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+    .timeline-item { padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 0.9rem; }
+    .timeline-item time { color: var(--muted); font-size: 0.8rem; }
+    .link-row { text-align: center; margin-top: 12px; font-size: 0.9rem; }
+    .link-row a { color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>报障进度查询</h1>
+      <p>输入提交成功时获得的工单号与查询码</p>
+    </div>
+    <div class="card">
+      <form id="queryForm">
+        <div class="field">
+          <label for="serial_number">工单号</label>
+          <input id="serial_number" required placeholder="例如 WO202508270001" />
+        </div>
+        <div class="field">
+          <label for="query_code">查询码</label>
+          <input id="query_code" required placeholder="6 位查询码" />
+        </div>
+        <button id="submitBtn" type="submit">查询</button>
+        <div id="msg" class="msg"></div>
+      </form>
+      <div id="result" class="result">
+        <h3 id="resultTitle"></h3>
+        <p><span class="tag" id="statusTag"></span> <span class="tag" id="priorityTag"></span></p>
+        <p id="resultDesc" style="margin:12px 0;color:var(--muted)"></p>
+        <div class="timeline" id="timeline"></div>
+      </div>
+      <div class="link-row"><a href="/public/fault">返回报障页</a></div>
+    </div>
+  </div>
+  <script>
+    const form = document.getElementById('queryForm');
+    const msg = document.getElementById('msg');
+    const result = document.getElementById('result');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.className = 'msg';
+      msg.textContent = '';
+      result.style.display = 'none';
+      submitBtn.disabled = true;
+      try {
+        const payload = {
+          serial_number: document.getElementById('serial_number').value.trim(),
+          query_code: document.getElementById('query_code').value.trim(),
+        };
+        const res = await fetch('/api/public/fault/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || (data.code !== undefined && data.code !== 0 && data.code !== 200)) {
+          throw new Error(data.message || '查询失败');
+        }
+        const item = data.data || data;
+        document.getElementById('resultTitle').textContent = item.title || '工单';
+        document.getElementById('statusTag').textContent = item.status_text || '';
+        document.getElementById('priorityTag').textContent = '优先级：' + (item.priority_text || '');
+        document.getElementById('resultDesc').textContent = item.description || '';
+        const tl = document.getElementById('timeline');
+        tl.innerHTML = '';
+        (item.timeline || []).forEach((row) => {
+          const div = document.createElement('div');
+          div.className = 'timeline-item';
+          const time = row.time ? new Date(row.time).toLocaleString() : '';
+          div.innerHTML = '<time>' + time + '</time> · ' + (row.action || '') + ' — ' + (row.content || '');
+          tl.appendChild(div);
+        });
+        result.style.display = 'block';
+      } catch (err) {
+        msg.className = 'msg error';
+        msg.textContent = err.message || '查询失败';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

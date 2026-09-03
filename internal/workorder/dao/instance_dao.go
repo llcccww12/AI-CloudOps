@@ -51,6 +51,7 @@ type WorkorderInstanceDAO interface {
 	DeleteInstance(ctx context.Context, id int) error
 	GetInstanceByID(ctx context.Context, id int) (*model.WorkorderInstance, error)
 	GetInstanceByTitle(ctx context.Context, title string) (*model.WorkorderInstance, error)
+	GetInstanceBySerialNumber(ctx context.Context, serialNumber string) (*model.WorkorderInstance, error)
 	ListInstance(ctx context.Context, req *model.ListWorkorderInstanceReq) ([]*model.WorkorderInstance, int64, error)
 	GenerateSerialNumber(ctx context.Context) (string, error)
 	UpdateInstanceStatus(ctx context.Context, id int, status int8) error
@@ -197,6 +198,23 @@ func (d *workorderInstanceDAO) GetInstanceByTitle(ctx context.Context, title str
 	return &instance, nil
 }
 
+func (d *workorderInstanceDAO) GetInstanceBySerialNumber(ctx context.Context, serialNumber string) (*model.WorkorderInstance, error) {
+	var instance model.WorkorderInstance
+	err := d.db.WithContext(ctx).
+		Where("serial_number = ?", serialNumber).
+		Preload("Timeline", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at DESC")
+		}).
+		First(&instance).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInstanceNotFound
+		}
+		return nil, fmt.Errorf("获取工单实例失败: %w", err)
+	}
+	return &instance, nil
+}
+
 func (d *workorderInstanceDAO) ListInstance(ctx context.Context, req *model.ListWorkorderInstanceReq) ([]*model.WorkorderInstance, int64, error) {
 	var instances []*model.WorkorderInstance
 	var total int64
@@ -233,6 +251,10 @@ func (d *workorderInstanceDAO) ListInstance(ctx context.Context, req *model.List
 		db = db.Where("process_id = ?", *req.ProcessID)
 	}
 
+	if req.Source != "" {
+		db = db.Where("source = ?", req.Source)
+	}
+
 	openStatus := []int{
 		int(model.InstanceStatusPending),
 		int(model.InstanceStatusProcessing),
@@ -260,7 +282,7 @@ func (d *workorderInstanceDAO) ListInstance(ctx context.Context, req *model.List
 
 	if req.Search != "" {
 		search := sanitizeSearchInput(req.Search)
-		db = db.Where("title LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%")
+		db = db.Where("title LIKE ? OR description LIKE ? OR serial_number LIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
 
 	countDB := db.Session(&gorm.Session{})

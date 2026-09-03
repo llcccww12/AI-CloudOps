@@ -59,6 +59,7 @@ type OpsConfig struct {
 	TrialWorkorderTemplateID      int          `mapstructure:"trial_workorder_template_id" env:"OPS_TRIAL_WORKORDER_TEMPLATE_ID" default:"0"`
 	ActivationWorkorderTemplateID int          `mapstructure:"activation_workorder_template_id" env:"OPS_ACTIVATION_WORKORDER_TEMPLATE_ID" default:"0"`
 	LifecycleWorkorderTemplateID  int          `mapstructure:"lifecycle_workorder_template_id" env:"OPS_LIFECYCLE_WORKORDER_TEMPLATE_ID" default:"0"`
+	PublicFaultWorkorderTemplateID int         `mapstructure:"public_fault_workorder_template_id" env:"OPS_PUBLIC_FAULT_WORKORDER_TEMPLATE_ID" default:"0"`
 	AttachmentDir                 string       `mapstructure:"attachment_dir" env:"OPS_ATTACHMENT_DIR" default:"./data/ops/attachments"`
 	AttachmentMaxSizeMB           int          `mapstructure:"attachment_max_size_mb" env:"OPS_ATTACHMENT_MAX_SIZE_MB" default:"20"`
 	AttachmentMaxCount            int          `mapstructure:"attachment_max_count" env:"OPS_ATTACHMENT_MAX_COUNT" default:"20"`

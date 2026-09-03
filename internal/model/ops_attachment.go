@@ -29,6 +29,7 @@ const (
 	OpsAttachmentBizContract   = "contract"
 	OpsAttachmentBizSettlement = "settlement"
 	OpsAttachmentBizExhibition = "exhibition"
+	OpsAttachmentBizPublicFault = "public_fault"
 )
 
 // OpsAttachment 运营业务附件（合同/结算等）
