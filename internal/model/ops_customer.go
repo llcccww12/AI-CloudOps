@@ -170,10 +170,28 @@ type ListOpsFollowupReq struct {
 	CustomerID int `json:"customer_id" form:"customer_id" binding:"required,min=1"`
 }
 
-// OpsCustomerLifecycleWorkorder 客户绑定的运营全流程工单
+const (
+	OpsCustomerProcessLifecycle  = "lifecycle"  // 运营全流程
+	OpsCustomerProcessTrial      = "trial"      // 运营测试开通
+	OpsCustomerProcessActivation = "activation" // 运营正式开通
+)
+
+// StartOpsCustomerProcessReq 从客户详情发起流程
+type StartOpsCustomerProcessReq struct {
+	ProcessType   string `json:"process_type" binding:"required,oneof=lifecycle trial activation"`
+	Title         string `json:"title"`
+	ResourceScale string `json:"resource_scale"`
+	Purpose       string `json:"purpose"`
+	Remark        string `json:"remark"`
+}
+
+// OpsCustomerLifecycleWorkorder 客户绑定的流程工单（全流程/测试开通/正式开通）
 type OpsCustomerLifecycleWorkorder struct {
 	CustomerID          int       `json:"customer_id"`
 	CustomerName        string    `json:"customer_name,omitempty"`
+	ProcessType         string    `json:"process_type,omitempty"` // lifecycle|trial|activation
+	ProcessTypeLabel    string    `json:"process_type_label,omitempty"`
+	BizID               int       `json:"biz_id,omitempty"`
 	WorkorderInstanceID int       `json:"workorder_instance_id"`
 	Title               string    `json:"title"`
 	SerialNumber        string    `json:"serial_number,omitempty"`

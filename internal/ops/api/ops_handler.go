@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/GoSimplicity/AI-CloudOps/internal/model"
 	"github.com/GoSimplicity/AI-CloudOps/internal/ops/service"
@@ -13,18 +14,19 @@ import (
 )
 
 type OpsHandler struct {
-	customerSvc   service.OpsCustomerService
-	leadSvc       service.OpsLeadService
-	bizSvc        service.OpsBizService
-	financeSvc    service.OpsFinanceService
-	reminderSvc   service.OpsReminderService
-	attachmentSvc service.OpsAttachmentService
-	dashboardSvc  service.OpsDashboardService
-	surveySvc     service.OpsSurveyService
-	billingSvc    service.OpsBillingService
-	workbenchSvc  service.OpsWorkbenchService
-	managerRptSvc service.OpsManagerReportService
+	customerSvc    service.OpsCustomerService
+	leadSvc        service.OpsLeadService
+	bizSvc         service.OpsBizService
+	financeSvc     service.OpsFinanceService
+	reminderSvc    service.OpsReminderService
+	attachmentSvc  service.OpsAttachmentService
+	dashboardSvc   service.OpsDashboardService
+	surveySvc      service.OpsSurveyService
+	billingSvc     service.OpsBillingService
+	workbenchSvc   service.OpsWorkbenchService
+	managerRptSvc  service.OpsManagerReportService
 	publicFaultSvc service.OpsPublicFaultService
+	computeSvc     service.OpsComputeService
 }
 
 func NewOpsHandler(
@@ -40,12 +42,14 @@ func NewOpsHandler(
 	workbenchSvc service.OpsWorkbenchService,
 	managerRptSvc service.OpsManagerReportService,
 	publicFaultSvc service.OpsPublicFaultService,
+	computeSvc service.OpsComputeService,
 ) *OpsHandler {
 	return &OpsHandler{
 		customerSvc: customerSvc, leadSvc: leadSvc, bizSvc: bizSvc,
 		financeSvc: financeSvc, reminderSvc: reminderSvc, attachmentSvc: attachmentSvc,
 		dashboardSvc: dashboardSvc, surveySvc: surveySvc, billingSvc: billingSvc,
 		workbenchSvc: workbenchSvc, managerRptSvc: managerRptSvc, publicFaultSvc: publicFaultSvc,
+		computeSvc: computeSvc,
 	}
 }
 
@@ -61,6 +65,21 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 		g.POST("/workbench/reminder-draft", h.CreateReminderDraft)
 		g.GET("/manager/weekly-report", h.GetManagerWeeklyReport)
 
+		g.POST("/compute/asset/create", h.CreateComputeAsset)
+		g.PUT("/compute/asset/update/:id", h.UpdateComputeAsset)
+		g.DELETE("/compute/asset/delete/:id", h.DeleteComputeAsset)
+		g.GET("/compute/asset/detail/:id", h.GetComputeAsset)
+		g.GET("/compute/asset/list", h.ListComputeAsset)
+		g.POST("/compute/asset/seed", h.SeedComputeAssets)
+		g.POST("/compute/allocation/create", h.CreateComputeAllocation)
+		g.PUT("/compute/allocation/update/:id", h.UpdateComputeAllocation)
+		g.POST("/compute/allocation/release/:id", h.ReleaseComputeAllocation)
+		g.POST("/compute/allocation/extend/:id", h.ExtendComputeAllocation)
+		g.DELETE("/compute/allocation/delete/:id", h.DeleteComputeAllocation)
+		g.GET("/compute/allocation/detail/:id", h.GetComputeAllocation)
+		g.GET("/compute/allocation/list", h.ListComputeAllocation)
+		g.GET("/compute/dashboard", h.GetComputeDashboard)
+
 		g.POST("/customer/create", h.CreateCustomer)
 		g.PUT("/customer/update/:id", h.UpdateCustomer)
 		g.DELETE("/customer/delete/:id", h.DeleteCustomer)
@@ -74,7 +93,9 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 		g.POST("/followup/create", h.CreateFollowup)
 		g.GET("/followup/list", h.ListFollowup)
 		g.POST("/customer/lifecycle/start/:id", h.StartCustomerLifecycle)
+		g.POST("/customer/process/start/:id", h.StartCustomerProcess)
 		g.GET("/customer/lifecycle/list/:id", h.ListCustomerLifecycle)
+		g.GET("/customer/evidence/:id", h.ListCustomerEvidence)
 		g.GET("/customer/lifecycle/approve-context/:id", h.GetLifecycleApproveContext)
 		g.POST("/customer/lifecycle/approve", h.ApproveLifecycleNode)
 
@@ -158,6 +179,8 @@ func (h *OpsHandler) RegisterRouters(server *gin.Engine) {
 		g.GET("/attachment/list", h.ListAttachment)
 		g.GET("/attachment/:id/download", h.DownloadAttachment)
 		g.DELETE("/attachment/delete/:id", h.DeleteAttachment)
+		g.GET("/activation/template", h.DownloadActivationTemplate)
+		g.GET("/delivery/list", h.ListDeliveryPacks)
 	}
 }
 
@@ -315,6 +338,18 @@ func (h *OpsHandler) StartCustomerLifecycle(ctx *gin.Context) {
 	})
 }
 
+func (h *OpsHandler) StartCustomerProcess(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	u := userClaims(ctx)
+	var req model.StartOpsCustomerProcessReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.bizSvc.StartCustomerProcess(ctx.Request.Context(), id, u.Uid, u.Username, &req)
+	})
+}
+
 func (h *OpsHandler) ListCustomerLifecycle(ctx *gin.Context) {
 	id, err := base.GetParamID(ctx)
 	if err != nil {
@@ -322,6 +357,16 @@ func (h *OpsHandler) ListCustomerLifecycle(ctx *gin.Context) {
 	}
 	base.HandleRequest(ctx, nil, func() (any, error) {
 		return h.bizSvc.ListCustomerLifecycle(ctx.Request.Context(), id)
+	})
+}
+
+func (h *OpsHandler) ListCustomerEvidence(ctx *gin.Context) {
+	id, err := base.GetParamID(ctx)
+	if err != nil {
+		return
+	}
+	base.HandleRequest(ctx, nil, func() (any, error) {
+		return h.attachmentSvc.ListCustomerEvidence(ctx.Request.Context(), id)
 	})
 }
 
@@ -883,15 +928,31 @@ func (h *OpsHandler) GenerateMonthlyBilling(ctx *gin.Context) {
 
 func (h *OpsHandler) UploadAttachment(ctx *gin.Context) {
 	u := userClaims(ctx)
-	bizType := ctx.PostForm("biz_type")
-	bizID, err := strconv.Atoi(ctx.PostForm("biz_id"))
+	// 优先 Query：避免前端 Content-Type 未带 boundary 时 PostForm 读不到字段
+	bizType := strings.TrimSpace(ctx.Query("biz_type"))
+	if bizType == "" {
+		bizType = strings.TrimSpace(ctx.PostForm("biz_type"))
+	}
+	rawBizID := strings.TrimSpace(ctx.Query("biz_id"))
+	if rawBizID == "" {
+		rawBizID = strings.TrimSpace(ctx.PostForm("biz_id"))
+	}
+	bizID, err := strconv.Atoi(rawBizID)
 	if err != nil || bizID <= 0 {
-		base.ErrorWithMessage(ctx, "biz_id 无效")
+		base.ErrorWithMessage(ctx, "biz_id 无效：请先保存/生成合同后再上传扫描件")
+		return
+	}
+	if bizType == "" {
+		base.ErrorWithMessage(ctx, "biz_type 无效")
 		return
 	}
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		base.ErrorWithMessage(ctx, "请上传文件")
+		// 兼容部分客户端字段名
+		fileHeader, err = ctx.FormFile("File")
+	}
+	if err != nil {
+		base.ErrorWithMessage(ctx, fmt.Sprintf("请上传文件（%v）", err))
 		return
 	}
 	attachment, err := h.attachmentSvc.Upload(ctx.Request.Context(), bizType, bizID, u.Uid, fileHeader)
@@ -934,5 +995,25 @@ func (h *OpsHandler) DeleteAttachment(ctx *gin.Context) {
 	}
 	base.HandleRequest(ctx, nil, func() (any, error) {
 		return nil, h.attachmentSvc.Delete(ctx.Request.Context(), id)
+	})
+}
+
+func (h *OpsHandler) DownloadActivationTemplate(ctx *gin.Context) {
+	scene := ctx.Query("scene")
+	absPath, downloadName, err := h.attachmentSvc.DownloadActivationTemplate(scene)
+	if err != nil {
+		base.ErrorWithMessage(ctx, err.Error())
+		return
+	}
+	disposition := fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(downloadName))
+	ctx.Header("Content-Disposition", disposition)
+	ctx.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	ctx.File(absPath)
+}
+
+func (h *OpsHandler) ListDeliveryPacks(ctx *gin.Context) {
+	var req model.ListOpsDeliveryPackReq
+	base.HandleRequest(ctx, &req, func() (any, error) {
+		return h.attachmentSvc.ListDeliveryPacks(ctx.Request.Context(), &req)
 	})
 }

@@ -108,6 +108,8 @@ func InitTables(db *gorm.DB) error {
 		&model.OpsSurveyInvite{},
 		&model.OpsVendorProfile{},
 		&model.OpsAttachment{},
+		&model.OpsComputeAsset{},
+		&model.OpsComputeAllocation{},
 
 		&model.CronJob{},
 	)

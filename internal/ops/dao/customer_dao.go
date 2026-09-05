@@ -36,7 +36,15 @@ func NewOpsCustomerDAO(db *gorm.DB, logger *zap.Logger) OpsCustomerDAO {
 }
 
 func (d *opsCustomerDAO) Create(ctx context.Context, c *model.OpsCustomer) error {
-	if err := d.db.WithContext(ctx).Create(c).Error; err != nil {
+	db := d.db.WithContext(ctx)
+	// 未配置组织编码时不写入空字符串，保持 NULL，避免唯一索引冲突
+	if strings.TrimSpace(c.ReportCode) == "" {
+		db = db.Omit("ReportCode")
+	}
+	if c.ReportEnabled == 0 {
+		c.ReportEnabled = 2
+	}
+	if err := db.Create(c).Error; err != nil {
 		return fmt.Errorf("创建客户失败: %w", err)
 	}
 	return nil
@@ -181,10 +189,16 @@ func (d *opsCustomerDAO) GetByReportCode(ctx context.Context, code string) (*mod
 }
 
 func (d *opsCustomerDAO) UpdateReportSettings(ctx context.Context, id int, code string, enabled int8) error {
-	result := d.db.WithContext(ctx).Model(&model.OpsCustomer{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"report_code":    strings.TrimSpace(code),
+	code = strings.TrimSpace(code)
+	updates := map[string]interface{}{
 		"report_enabled": enabled,
-	})
+	}
+	if code == "" {
+		updates["report_code"] = nil
+	} else {
+		updates["report_code"] = code
+	}
+	result := d.db.WithContext(ctx).Model(&model.OpsCustomer{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("更新报障配置失败: %w", result.Error)
 	}

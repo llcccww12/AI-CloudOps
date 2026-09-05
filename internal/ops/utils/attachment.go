@@ -24,6 +24,8 @@ var allowedOpsAttachmentExt = map[string]string{
 	".ppt":  "application/vnd.ms-powerpoint",
 	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 	".zip":  "application/zip",
+	".eml":  "message/rfc822",
+	".msg":  "application/vnd.ms-outlook",
 }
 
 func GetOpsAttachmentDir() string {
@@ -48,6 +50,15 @@ func GetOpsAttachmentMaxCount() int {
 		return 20
 	}
 	return count
+}
+
+// GetOpsActivationTemplatePath 标准开通单 Excel 模版路径
+func GetOpsActivationTemplatePath() string {
+	path := strings.TrimSpace(viper.GetString("ops.activation_template_path"))
+	if path == "" {
+		return "./assets/ops/templates/思明智算业务开通单v1.0.xlsx"
+	}
+	return path
 }
 
 func ValidateOpsAttachmentFileName(fileName string) (ext string, contentType string, err error) {

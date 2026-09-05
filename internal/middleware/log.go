@@ -29,6 +29,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -62,14 +63,23 @@ func (lm *LogMiddleware) Log() gin.HandlerFunc {
 		start := time.Now()
 		path := c.Request.URL.Path
 		method := c.Request.Method
-		bodyBytes, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			lm.l.Error("请求体读取失败", zap.Error(err))
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
+		ct := c.GetHeader("Content-Type")
+		isMultipart := strings.Contains(strings.ToLower(ct), "multipart/form-data")
+
+		var bodyBytes []byte
+		if isMultipart {
+			// 文件上传不预读 body，避免破坏 multipart 流
+			bodyBytes = nil
+		} else {
+			var err error
+			bodyBytes, err = io.ReadAll(c.Request.Body)
+			if err != nil {
+				lm.l.Error("请求体读取失败", zap.Error(err))
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		}
-		// 由于读取请求体会消耗掉c.Request.Body，所以需要重新设置回上下文
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		al := AccessLog{
 			Path:    path,
 			Query:   c.Request.URL.RawQuery,

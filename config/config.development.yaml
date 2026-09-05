@@ -32,14 +32,16 @@ workorder:
   attachment_max_size_mb: 10
   attachment_max_count: 5
 ops:
-  trial_workorder_template_id: 0
-  activation_workorder_template_id: 0
+  trial_workorder_template_id: 4
+  activation_workorder_template_id: 5
   lifecycle_workorder_template_id: 2
   # 客户公网报障工单模板 ID（「客户故障报修模板」）
   public_fault_workorder_template_id: 3
   attachment_dir: "./data/ops/attachments"
   attachment_max_size_mb: 20
   attachment_max_count: 20
+  # 标准开通单 Excel（测试/正式同一模版）
+  activation_template_path: "./assets/ops/templates/思明智算业务开通单v1.0.xlsx"
   vendor_profile_url: "https://www.kdocs.cn/office/w/cgKlFKho02Cg"
   # 对外问卷/访客页完整域名（含协议），留空则默认 http://127.0.0.1:{server.port}
   public_base_url: ""

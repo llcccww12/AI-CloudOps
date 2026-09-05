@@ -63,6 +63,7 @@ type OpsConfig struct {
 	AttachmentDir                 string       `mapstructure:"attachment_dir" env:"OPS_ATTACHMENT_DIR" default:"./data/ops/attachments"`
 	AttachmentMaxSizeMB           int          `mapstructure:"attachment_max_size_mb" env:"OPS_ATTACHMENT_MAX_SIZE_MB" default:"20"`
 	AttachmentMaxCount            int          `mapstructure:"attachment_max_count" env:"OPS_ATTACHMENT_MAX_COUNT" default:"20"`
+	ActivationTemplatePath        string       `mapstructure:"activation_template_path" env:"OPS_ACTIVATION_TEMPLATE_PATH" default:"./assets/ops/templates/思明智算业务开通单v1.0.xlsx"`
 	SMS                           OpsSMSConfig `mapstructure:"sms"`
 	VendorProfileURL              string       `mapstructure:"vendor_profile_url" env:"OPS_VENDOR_PROFILE_URL" default:""`
 	PublicBaseURL                 string       `mapstructure:"public_base_url" env:"OPS_PUBLIC_BASE_URL" default:""`

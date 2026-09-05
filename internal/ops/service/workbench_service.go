@@ -118,15 +118,15 @@ func (s *opsWorkbenchService) Briefing(ctx context.Context, req *model.OpsWorkbe
 
 	for _, t := range trials {
 		c := getCustomer(t.CustomerID)
-		if mineOnly && (c == nil || c.OwnerID != ownerID) {
+		if c == nil {
+			continue // 客户已删除，跳过
+		}
+		if mineOnly && c.OwnerID != ownerID {
 			continue
 		}
-		name := ""
-		ownerName := ""
-		oid := 0
-		if c != nil {
-			name, ownerName, oid = c.Name, c.OwnerName, c.OwnerID
-		}
+		name := c.Name
+		ownerName := c.OwnerName
+		oid := c.OwnerID
 		due := t.PlanEndAt
 		items = append(items, model.OpsRiskItem{
 			Type: model.OpsRiskTrialExpiring, Severity: model.OpsRiskSeverityHigh,
@@ -142,13 +142,13 @@ func (s *opsWorkbenchService) Briefing(ctx context.Context, req *model.OpsWorkbe
 
 	for _, ct := range contracts {
 		c := getCustomer(ct.CustomerID)
-		if mineOnly && (c == nil || c.OwnerID != ownerID) {
+		if c == nil {
 			continue
 		}
-		name, ownerName, oid := "", "", 0
-		if c != nil {
-			name, ownerName, oid = c.Name, c.OwnerName, c.OwnerID
+		if mineOnly && c.OwnerID != ownerID {
+			continue
 		}
+		name, ownerName, oid := c.Name, c.OwnerName, c.OwnerID
 		items = append(items, model.OpsRiskItem{
 			Type: model.OpsRiskContractExpiring, Severity: model.OpsRiskSeverityMedium,
 			Title: "正式合同即将到期", Summary: fmt.Sprintf("合同「%s」即将到期，关注续约或增值", ct.Title),
@@ -163,13 +163,13 @@ func (s *opsWorkbenchService) Briefing(ctx context.Context, req *model.OpsWorkbe
 
 	for _, st := range dueSoon {
 		c := getCustomer(st.CustomerID)
-		if mineOnly && (c == nil || c.OwnerID != ownerID) {
+		if c == nil {
 			continue
 		}
-		name, ownerName, oid := "", "", 0
-		if c != nil {
-			name, ownerName, oid = c.Name, c.OwnerName, c.OwnerID
+		if mineOnly && c.OwnerID != ownerID {
+			continue
 		}
+		name, ownerName, oid := c.Name, c.OwnerName, c.OwnerID
 		items = append(items, model.OpsRiskItem{
 			Type: model.OpsRiskSettlementDueSoon, Severity: model.OpsRiskSeverityMedium,
 			Title: "结算即将到期", Summary: fmt.Sprintf("结算「%s」金额 %.2f 即将到期", st.Title, st.Amount),
@@ -184,13 +184,13 @@ func (s *opsWorkbenchService) Briefing(ctx context.Context, req *model.OpsWorkbe
 
 	for _, st := range overdue {
 		c := getCustomer(st.CustomerID)
-		if mineOnly && (c == nil || c.OwnerID != ownerID) {
+		if c == nil {
 			continue
 		}
-		name, ownerName, oid := "", "", 0
-		if c != nil {
-			name, ownerName, oid = c.Name, c.OwnerName, c.OwnerID
+		if mineOnly && c.OwnerID != ownerID {
+			continue
 		}
+		name, ownerName, oid := c.Name, c.OwnerName, c.OwnerID
 		items = append(items, model.OpsRiskItem{
 			Type: model.OpsRiskSettlementOverdue, Severity: model.OpsRiskSeverityHigh,
 			Title: "结算已逾期", Summary: fmt.Sprintf("结算「%s」金额 %.2f 已逾期未结清", st.Title, st.Amount),
@@ -209,19 +209,18 @@ func (s *opsWorkbenchService) Briefing(ctx context.Context, req *model.OpsWorkbe
 			continue
 		}
 		c := getCustomer(resp.CustomerID)
-		if mineOnly && (c == nil || c.OwnerID != ownerID) {
+		if c == nil {
+			continue
+		}
+		if mineOnly && c.OwnerID != ownerID {
 			continue
 		}
 		seenLow[resp.CustomerID] = true
-		name, ownerName, oid := "", "", 0
-		if c != nil {
-			name, ownerName, oid = c.Name, c.OwnerName, c.OwnerID
-		}
 		items = append(items, model.OpsRiskItem{
 			Type: model.OpsRiskSurveyLowScore, Severity: model.OpsRiskSeverityHigh,
 			Title: "满意度偏低", Summary: fmt.Sprintf("客户满意度评分 %d，需跟进问题与建议", resp.Score),
 			Suggestion: "电话回访并记录跟进；必要时升级交付",
-			CustomerID: resp.CustomerID, CustomerName: name, OwnerID: oid, OwnerName: ownerName,
+			CustomerID: resp.CustomerID, CustomerName: c.Name, OwnerID: c.OwnerID, OwnerName: c.OwnerName,
 			BizType: "survey_response", BizID: resp.ID, DueAt: resp.SubmittedAt,
 			RefPath: "/ops/surveys",
 			DraftHint: model.OpsRiskSurveyLowScore,

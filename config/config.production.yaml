@@ -39,6 +39,7 @@ ops:
   attachment_dir: "./data/ops/attachments"
   attachment_max_size_mb: 20
   attachment_max_count: 20
+  activation_template_path: "./assets/ops/templates/思明智算业务开通单v1.0.xlsx"
   vendor_profile_url: "https://www.kdocs.cn/office/w/cgKlFKho02Cg"
   public_base_url: ""
   sms:

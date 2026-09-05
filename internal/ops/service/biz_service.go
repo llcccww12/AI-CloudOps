@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ type OpsBizService interface {
 	SubmitActivation(ctx context.Context, id, operatorID int, operatorName string) error
 
 	StartCustomerLifecycle(ctx context.Context, customerID, operatorID int, operatorName string) (*model.OpsCustomerLifecycleWorkorder, error)
+	StartCustomerProcess(ctx context.Context, customerID, operatorID int, operatorName string, req *model.StartOpsCustomerProcessReq) (*model.OpsCustomerLifecycleWorkorder, error)
 	ListCustomerLifecycle(ctx context.Context, customerID int) ([]*model.OpsCustomerLifecycleWorkorder, error)
 	GetLifecycleApproveContext(ctx context.Context, instanceID int) (*model.OpsLifecycleApproveContext, error)
 	ApproveLifecycleNode(ctx context.Context, req *model.OpsLifecycleApproveReq, operatorID int, operatorName string) error
@@ -62,6 +64,7 @@ type opsBizService struct {
 	itemDAO       dao.OpsContractItemDAO
 	processDao    workorderDao.WorkorderProcessDAO
 	instanceSvc   workorderService.InstanceService
+	computeSvc    OpsComputeService
 	logger        *zap.Logger
 }
 
@@ -78,13 +81,15 @@ func NewOpsBizService(
 	itemDAO dao.OpsContractItemDAO,
 	processDao workorderDao.WorkorderProcessDAO,
 	instanceSvc workorderService.InstanceService,
+	computeSvc OpsComputeService,
 	logger *zap.Logger,
 ) OpsBizService {
 	return &opsBizService{
 		trialDAO: trialDAO, contractDAO: contractDAO, activationDAO: activationDAO,
 		approvalDAO: approvalDAO, customerDAO: customerDAO, followupDAO: followupDAO,
 		settlementDAO: settlementDAO, invoiceDAO: invoiceDAO, paymentDAO: paymentDAO,
-		itemDAO: itemDAO, processDao: processDao, instanceSvc: instanceSvc, logger: logger,
+		itemDAO: itemDAO, processDao: processDao, instanceSvc: instanceSvc,
+		computeSvc: computeSvc, logger: logger,
 	}
 }
 
@@ -241,7 +246,8 @@ func (s *opsBizService) CreateContract(ctx context.Context, req *model.CreateOps
 	}
 	return s.contractDAO.Create(ctx, &model.OpsContract{
 		CustomerID: req.CustomerID, TrialID: req.TrialID, Type: req.Type, Title: strings.TrimSpace(req.Title),
-		ProductType: req.ProductType, BillingMode: req.BillingMode, UnitPrice: req.UnitPrice, BillingCycle: req.BillingCycle,
+		ContractNo: strings.TrimSpace(req.ContractNo), ProductType: req.ProductType, BillingMode: req.BillingMode,
+		UnitPrice: req.UnitPrice, BillingCycle: req.BillingCycle,
 		PaymentMethod: req.PaymentMethod, PaymentTermDays: term, StartAt: req.StartAt, EndAt: req.EndAt, AutoRenew: autoRenew,
 		Status: model.OpsContractStatusDraft, Remark: req.Remark,
 		OperatorID: req.OperatorID, OperatorName: req.OperatorName,
@@ -255,7 +261,7 @@ func (s *opsBizService) UpdateContract(ctx context.Context, req *model.UpdateOps
 	}
 	return s.contractDAO.Update(ctx, &model.OpsContract{
 		Model: model.Model{ID: req.ID}, Title: strings.TrimSpace(req.Title),
-		ProductType: req.ProductType, BillingMode: req.BillingMode,
+		ContractNo: strings.TrimSpace(req.ContractNo), ProductType: req.ProductType, BillingMode: req.BillingMode,
 		UnitPrice: req.UnitPrice, BillingCycle: req.BillingCycle, PaymentMethod: req.PaymentMethod,
 		PaymentTermDays: req.PaymentTermDays,
 		StartAt: req.StartAt, EndAt: req.EndAt, AutoRenew: req.AutoRenew, Status: status, Remark: req.Remark,
@@ -385,6 +391,35 @@ func (s *opsBizService) SubmitActivation(ctx context.Context, id, operatorID int
 	return nil
 }
 
+func (s *opsBizService) StartCustomerProcess(ctx context.Context, customerID, operatorID int, operatorName string, req *model.StartOpsCustomerProcessReq) (*model.OpsCustomerLifecycleWorkorder, error) {
+	if req == nil {
+		return nil, fmt.Errorf("请求参数不能为空")
+	}
+	switch req.ProcessType {
+	case model.OpsCustomerProcessLifecycle:
+		return s.StartCustomerLifecycle(ctx, customerID, operatorID, operatorName)
+	case model.OpsCustomerProcessTrial:
+		return s.startCustomerTrialProcess(ctx, customerID, operatorID, operatorName, req)
+	case model.OpsCustomerProcessActivation:
+		return s.startCustomerActivationProcess(ctx, customerID, operatorID, operatorName, req)
+	default:
+		return nil, fmt.Errorf("不支持的流程类型: %s", req.ProcessType)
+	}
+}
+
+func processTypeLabel(processType string) string {
+	switch processType {
+	case model.OpsCustomerProcessLifecycle:
+		return "运营全流程"
+	case model.OpsCustomerProcessTrial:
+		return "运营测试开通"
+	case model.OpsCustomerProcessActivation:
+		return "运营正式开通"
+	default:
+		return processType
+	}
+}
+
 func (s *opsBizService) StartCustomerLifecycle(ctx context.Context, customerID, operatorID int, operatorName string) (*model.OpsCustomerLifecycleWorkorder, error) {
 	customer, err := s.customerDAO.GetByID(ctx, customerID)
 	if err != nil {
@@ -394,19 +429,16 @@ func (s *opsBizService) StartCustomerLifecycle(ctx context.Context, customerID, 
 	if templateID <= 0 {
 		return nil, fmt.Errorf("未配置运营全流程工单模板（ops.lifecycle_workorder_template_id）")
 	}
-	if existing, err := s.findCustomerLifecycle(ctx, customerID); err != nil {
-		return nil, err
-	} else if existing != nil {
-		return nil, fmt.Errorf("该客户已绑定运营全流程工单（工单ID=%d，状态：%s），一个客户项目仅允许一个工单，请直接查看进度", existing.WorkorderInstanceID, existing.Status)
-	}
-	title := fmt.Sprintf("运营全流程-%s-%d-%d", customer.Name, customer.ID, time.Now().Unix())
+	// 同一客户可多次发起全流程（多次试用/扩容/正式等），不做一客户一单限制
+	now := time.Now()
+	title := fmt.Sprintf("运营全流程-%s-%s", customer.Name, now.Format("20060102-150405"))
 	stageForForm := customer.Stage
 	if stageForForm != model.OpsCustomerStageFormal && stageForForm != model.OpsCustomerStageClosed {
 		stageForForm = model.OpsCustomerStageTrial
 	}
 	req := &model.CreateWorkorderInstanceFromTemplateReq{
 		Title: title,
-		Description: fmt.Sprintf("客户「%s」从试用到正式合同与回款的运营全流程", customer.Name),
+		Description: fmt.Sprintf("客户「%s」运营全流程（可多次发起：试用/扩容/正式等）", customer.Name),
 		Priority: model.PriorityNormal,
 		FormData: model.JSONMap{
 			"ops_biz_type":   model.OpsApprovalBizCustomerLifecycle,
@@ -432,8 +464,8 @@ func (s *opsBizService) StartCustomerLifecycle(ctx context.Context, customerID, 
 		s.logger.Warn("运营全流程工单已创建但自动提交失败，可在工单中心手动提交",
 			zap.Int("instanceID", instanceID), zap.Error(err))
 	}
-	// 发起全流程后客户进入试用阶段（正式/闭环不回退）
-	if customer.Stage != model.OpsCustomerStageFormal && customer.Stage != model.OpsCustomerStageClosed {
+	// 意向/线索客户首次或再次发起时进入试用；正式/闭环不回退
+	if customer.Stage == model.OpsCustomerStageLead || customer.Stage == model.OpsCustomerStageIntent || customer.Stage == "" {
 		if err := s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageTrial, ""); err != nil {
 			s.logger.Warn("发起全流程后更新客户试用阶段失败", zap.Int("customerID", customerID), zap.Error(err))
 		} else {
@@ -443,6 +475,9 @@ func (s *opsBizService) StartCustomerLifecycle(ctx context.Context, customerID, 
 	return &model.OpsCustomerLifecycleWorkorder{
 		CustomerID:          customerID,
 		CustomerName:        customer.Name,
+		ProcessType:         model.OpsCustomerProcessLifecycle,
+		ProcessTypeLabel:    processTypeLabel(model.OpsCustomerProcessLifecycle),
+		BizID:               customerID,
 		WorkorderInstanceID: instanceID,
 		Title:               req.Title,
 		Status:              model.OpsApprovalLinkPending,
@@ -450,50 +485,229 @@ func (s *opsBizService) StartCustomerLifecycle(ctx context.Context, customerID, 
 	}, nil
 }
 
-func (s *opsBizService) ListCustomerLifecycle(ctx context.Context, customerID int) ([]*model.OpsCustomerLifecycleWorkorder, error) {
-	if _, err := s.customerDAO.GetByID(ctx, customerID); err != nil {
+func (s *opsBizService) startCustomerTrialProcess(ctx context.Context, customerID, operatorID int, operatorName string, req *model.StartOpsCustomerProcessReq) (*model.OpsCustomerLifecycleWorkorder, error) {
+	customer, err := s.customerDAO.GetByID(ctx, customerID)
+	if err != nil {
 		return nil, err
 	}
+	templateID := viper.GetInt("ops.trial_workorder_template_id")
+	if templateID <= 0 {
+		return nil, fmt.Errorf("未配置运营测试开通工单模板（ops.trial_workorder_template_id）")
+	}
+	now := time.Now()
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = fmt.Sprintf("运营测试开通-%s-%s", customer.Name, now.Format("20060102-150405"))
+	}
+	purpose := strings.TrimSpace(req.Purpose)
+	if purpose == "" {
+		purpose = strings.TrimSpace(req.Remark)
+	}
+	if purpose == "" {
+		purpose = fmt.Sprintf("客户「%s」测试开通", customer.Name)
+	}
+	trial := &model.OpsTrial{
+		CustomerID: customerID, Title: title, DemandType: "测试开通",
+		ResourceScale: strings.TrimSpace(req.ResourceScale), Purpose: purpose,
+		CustomerShortName: customer.Name, OwnerName: customer.OwnerName, OpenMethod: model.OpsOpenMethodTrial,
+		Status: model.OpsTrialStatusDraft, OperatorID: operatorID, OperatorName: operatorName,
+	}
+	if err := s.trialDAO.Create(ctx, trial); err != nil {
+		return nil, fmt.Errorf("创建试用单失败: %w", err)
+	}
+	woReq := &model.CreateWorkorderInstanceFromTemplateReq{
+		Title: title, Description: purpose, Priority: model.PriorityNormal,
+		FormData: model.JSONMap{
+			"ops_biz_type":    model.OpsApprovalBizTrial,
+			"ops_biz_id":      trial.ID,
+			"customer_id":     customer.ID,
+			"customer_name":   customer.Name,
+			"owner_name":      customer.OwnerName,
+			"contact_name":    customer.ContactName,
+			"contact_phone":   customer.ContactPhone,
+			"resource_scale":  trial.ResourceScale,
+			"purpose":         purpose,
+			"remark":          strings.TrimSpace(req.Remark),
+		},
+		OperatorID: operatorID, OperatorName: operatorName,
+	}
+	instanceID, err := s.instanceSvc.CreateInstanceFromTemplate(ctx, templateID, woReq)
+	if err != nil {
+		return nil, fmt.Errorf("创建运营测试开通工单失败: %w", err)
+	}
+	if err := s.bindWorkorder(ctx, model.OpsApprovalBizTrial, trial.ID, instanceID); err != nil {
+		return nil, err
+	}
+	if err := s.trialDAO.UpdateStatus(ctx, trial.ID, model.OpsTrialStatusPending); err != nil {
+		return nil, err
+	}
+	if err := s.instanceSvc.SubmitInstance(ctx, instanceID, operatorID, operatorName); err != nil {
+		s.logger.Warn("运营测试开通工单已创建但自动提交失败，可在工单中心手动提交",
+			zap.Int("instanceID", instanceID), zap.Error(err))
+	}
+	if customer.Stage == model.OpsCustomerStageLead || customer.Stage == model.OpsCustomerStageIntent || customer.Stage == "" {
+		if err := s.customerDAO.UpdateStage(ctx, customerID, model.OpsCustomerStageTrial, ""); err != nil {
+			s.logger.Warn("发起测试开通后更新客户试用阶段失败", zap.Int("customerID", customerID), zap.Error(err))
+		}
+	}
+	return &model.OpsCustomerLifecycleWorkorder{
+		CustomerID: customerID, CustomerName: customer.Name,
+		ProcessType: model.OpsCustomerProcessTrial, ProcessTypeLabel: processTypeLabel(model.OpsCustomerProcessTrial),
+		BizID: trial.ID, WorkorderInstanceID: instanceID, Title: title,
+		Status: model.OpsApprovalLinkPending, LinkStatus: model.OpsApprovalLinkPending,
+	}, nil
+}
+
+func (s *opsBizService) startCustomerActivationProcess(ctx context.Context, customerID, operatorID int, operatorName string, req *model.StartOpsCustomerProcessReq) (*model.OpsCustomerLifecycleWorkorder, error) {
+	customer, err := s.customerDAO.GetByID(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	templateID := viper.GetInt("ops.activation_workorder_template_id")
+	if templateID <= 0 {
+		return nil, fmt.Errorf("未配置运营正式开通工单模板（ops.activation_workorder_template_id）")
+	}
+	now := time.Now()
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = fmt.Sprintf("运营正式开通-%s-%s", customer.Name, now.Format("20060102-150405"))
+	}
+	purpose := strings.TrimSpace(req.Purpose)
+	if purpose == "" {
+		purpose = strings.TrimSpace(req.Remark)
+	}
+	if purpose == "" {
+		purpose = fmt.Sprintf("客户「%s」正式开通", customer.Name)
+	}
+	contract := &model.OpsContract{
+		CustomerID: customerID, Type: model.OpsContractTypeFormal, Title: title + "-合同",
+		Status: model.OpsContractStatusDraft, Remark: strings.TrimSpace(req.Remark),
+		PaymentTermDays: 30, AutoRenew: 2, OperatorID: operatorID, OperatorName: operatorName,
+	}
+	if err := s.contractDAO.Create(ctx, contract); err != nil {
+		return nil, fmt.Errorf("创建正式合同草稿失败: %w", err)
+	}
+	act := &model.OpsActivation{
+		CustomerID: customerID, ContractID: contract.ID, Title: title,
+		ResourceSummary: strings.TrimSpace(req.ResourceScale), Purpose: purpose,
+		CustomerShortName: customer.Name, OwnerName: customer.OwnerName, OpenMethod: model.OpsOpenMethodFormal,
+		Status: model.OpsActivationStatusDraft, OperatorID: operatorID, OperatorName: operatorName,
+	}
+	if err := s.activationDAO.Create(ctx, act); err != nil {
+		return nil, fmt.Errorf("创建开通单失败: %w", err)
+	}
+	woReq := &model.CreateWorkorderInstanceFromTemplateReq{
+		Title: title,
+		Description: fmt.Sprintf("客户「%s」正式开通（全流程减试用：意向→合同开通→结算→开票回款）", customer.Name),
+		Priority: model.PriorityNormal,
+		FormData: model.JSONMap{
+			"ops_biz_type":     model.OpsApprovalBizActivation,
+			"ops_biz_id":       act.ID,
+			"process_scene":    "formal",
+			"activation_id":    act.ID,
+			"contract_id":      contract.ID,
+			"customer_id":      customer.ID,
+			"customer_name":    customer.Name,
+			"customer_stage":   model.OpsCustomerStageFormal,
+			"owner_name":       customer.OwnerName,
+			"contact_name":     customer.ContactName,
+			"contact_phone":    customer.ContactPhone,
+			"resource_summary": act.ResourceSummary,
+			"purpose":          purpose,
+			"remark":           strings.TrimSpace(req.Remark),
+		},
+		OperatorID: operatorID, OperatorName: operatorName,
+	}
+	instanceID, err := s.instanceSvc.CreateInstanceFromTemplate(ctx, templateID, woReq)
+	if err != nil {
+		return nil, fmt.Errorf("创建运营正式开通工单失败: %w", err)
+	}
+	if err := s.bindWorkorder(ctx, model.OpsApprovalBizActivation, act.ID, instanceID); err != nil {
+		return nil, err
+	}
+	if err := s.activationDAO.UpdateStatus(ctx, act.ID, model.OpsActivationStatusPending); err != nil {
+		return nil, err
+	}
+	if err := s.instanceSvc.SubmitInstance(ctx, instanceID, operatorID, operatorName); err != nil {
+		s.logger.Warn("运营正式开通工单已创建但自动提交失败，可在工单中心手动提交",
+			zap.Int("instanceID", instanceID), zap.Error(err))
+	}
+	return &model.OpsCustomerLifecycleWorkorder{
+		CustomerID: customerID, CustomerName: customer.Name,
+		ProcessType: model.OpsCustomerProcessActivation, ProcessTypeLabel: processTypeLabel(model.OpsCustomerProcessActivation),
+		BizID: act.ID, WorkorderInstanceID: instanceID, Title: title,
+		Status: model.OpsApprovalLinkPending, LinkStatus: model.OpsApprovalLinkPending,
+	}, nil
+}
+
+func (s *opsBizService) appendProcessWorkorders(ctx context.Context, out []*model.OpsCustomerLifecycleWorkorder, customerID int, processType string, bizID int, link *model.OpsApprovalLink) []*model.OpsCustomerLifecycleWorkorder {
+	if link == nil {
+		return out
+	}
+	inst, err := s.instanceSvc.GetInstance(ctx, link.WorkorderInstanceID)
+	if err != nil || inst == nil {
+		return out
+	}
+	item := &model.OpsCustomerLifecycleWorkorder{
+		CustomerID: customerID, ProcessType: processType, ProcessTypeLabel: processTypeLabel(processType),
+		BizID: bizID, WorkorderInstanceID: link.WorkorderInstanceID, LinkStatus: link.Status,
+		CreatedAt: link.CreatedAt, Title: inst.Title, InstanceStatus: inst.Status,
+		SerialNumber: inst.SerialNumber, Status: instanceStatusLabel(inst.Status),
+	}
+	if inst.CurrentStepID != nil {
+		item.CurrentStepID = *inst.CurrentStepID
+	}
+	return append(out, item)
+}
+
+func (s *opsBizService) ListCustomerLifecycle(ctx context.Context, customerID int) ([]*model.OpsCustomerLifecycleWorkorder, error) {
+	if _, err := s.customerDAO.GetByID(ctx, customerID); err != nil {
+		// 客户已删除：不再报错查询，返回空列表
+		return []*model.OpsCustomerLifecycleWorkorder{}, nil
+	}
+	out := make([]*model.OpsCustomerLifecycleWorkorder, 0)
+
 	links, err := s.approvalDAO.ListByBiz(ctx, model.OpsApprovalBizCustomerLifecycle, customerID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*model.OpsCustomerLifecycleWorkorder, 0, len(links))
 	for _, link := range links {
-		inst, err := s.instanceSvc.GetInstance(ctx, link.WorkorderInstanceID)
-		if err != nil || inst == nil {
-			continue
-		}
-		item := &model.OpsCustomerLifecycleWorkorder{
-			CustomerID:          customerID,
-			WorkorderInstanceID: link.WorkorderInstanceID,
-			LinkStatus:          link.Status,
-			CreatedAt:           link.CreatedAt,
-			Title:               inst.Title,
-			InstanceStatus:      inst.Status,
-			SerialNumber:        inst.SerialNumber,
-			Status:              instanceStatusLabel(inst.Status),
-		}
-		if inst.CurrentStepID != nil {
-			item.CurrentStepID = *inst.CurrentStepID
-		}
-		out = append(out, item)
+		out = s.appendProcessWorkorders(ctx, out, customerID, model.OpsCustomerProcessLifecycle, customerID, link)
 	}
-	return out, nil
-}
 
-func (s *opsBizService) findCustomerLifecycle(ctx context.Context, customerID int) (*model.OpsCustomerLifecycleWorkorder, error) {
-	items, err := s.ListCustomerLifecycle(ctx, customerID)
+	trials, _, err := s.trialDAO.List(ctx, &model.ListOpsTrialReq{CustomerID: customerID, ListReq: model.ListReq{Page: 1, Size: 200}})
 	if err != nil {
 		return nil, err
 	}
-	// 一客户一工单：取仍存在的最新一条（含拒绝/完成/取消）
-	for _, item := range items {
-		if item != nil && item.WorkorderInstanceID > 0 {
-			return item, nil
+	for _, trial := range trials {
+		tLinks, err := s.approvalDAO.ListByBiz(ctx, model.OpsApprovalBizTrial, trial.ID)
+		if err != nil {
+			continue
+		}
+		for _, link := range tLinks {
+			out = s.appendProcessWorkorders(ctx, out, customerID, model.OpsCustomerProcessTrial, trial.ID, link)
 		}
 	}
-	return nil, nil
+
+	acts, _, err := s.activationDAO.List(ctx, &model.ListOpsActivationReq{CustomerID: customerID, ListReq: model.ListReq{Page: 1, Size: 200}})
+	if err != nil {
+		return nil, err
+	}
+	for _, act := range acts {
+		aLinks, err := s.approvalDAO.ListByBiz(ctx, model.OpsApprovalBizActivation, act.ID)
+		if err != nil {
+			continue
+		}
+		for _, link := range aLinks {
+			out = s.appendProcessWorkorders(ctx, out, customerID, model.OpsCustomerProcessActivation, act.ID, link)
+		}
+	}
+
+	// 按创建时间倒序
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out, nil
 }
 
 func (s *opsBizService) SyncPendingApprovals(ctx context.Context) error {

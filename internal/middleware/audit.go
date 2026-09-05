@@ -65,6 +65,7 @@ var skipAuditPaths = map[string]bool{
 	"/api/monitor/prometheus_configs/prometheus_alert":  true,
 	"/api/monitor/prometheus_configs/prometheus_record": true,
 	"/api/monitor/prometheus_configs/alertManager":      true,
+	"/api/ops/attachment/upload":                        true,
 }
 
 var operationTypeMap = map[string]string{
@@ -115,8 +116,10 @@ func (m *AuditLogMiddleware) AuditLog() gin.HandlerFunc {
 		startTime := time.Now()
 		traceID := c.GetHeader("X-Trace-ID")
 
-		// 只处理非GET请求的请求体
-		if c.Request.Method != "GET" && c.Request.Body != nil {
+		// 只处理非GET请求的请求体；multipart 上传禁止预读，否则会截断文件导致 FormFile EOF
+		ct := c.GetHeader("Content-Type")
+		isMultipart := strings.Contains(strings.ToLower(ct), "multipart/form-data")
+		if c.Request.Method != "GET" && c.Request.Body != nil && !isMultipart {
 			buf := bufferPool.Get().(*bytes.Buffer)
 			buf.Reset()
 			defer bufferPool.Put(buf)

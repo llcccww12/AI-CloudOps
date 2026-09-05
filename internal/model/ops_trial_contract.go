@@ -49,6 +49,10 @@ const (
 	OpsActivationStatusRejected = "rejected"
 	OpsActivationStatusActive   = "active"
 
+	OpsOpenMethodTrial   = "trial"   // 测试开通
+	OpsOpenMethodFormal  = "formal"  // 正式开通
+	OpsOpenMethodExpand  = "expand"  // 扩容开通
+
 	OpsApprovalBizTrial             = "trial"
 	OpsApprovalBizActivation        = "activation"
 	OpsApprovalBizCustomerLifecycle = "customer_lifecycle"
@@ -74,6 +78,21 @@ type OpsTrial struct {
 	ActualEndAt    *time.Time `json:"actual_end_at" gorm:"column:actual_end_at;comment:实际结束"`
 	Evaluation     string     `json:"evaluation" gorm:"column:evaluation;type:text;comment:试用评价"`
 	ConvertIntent  string     `json:"convert_intent" gorm:"column:convert_intent;type:varchar(64);comment:转化意向"`
+	// 开通台账（归档列表）
+	CustomerShortName string     `json:"customer_short_name" gorm:"column:customer_short_name;type:varchar(100);comment:客户简称"`
+	ProductType       string     `json:"product_type" gorm:"column:product_type;type:varchar(64);index;comment:产品类型"`
+	Region            string     `json:"region" gorm:"column:region;type:varchar(64);comment:所属大区"`
+	OwnerName         string     `json:"owner_name" gorm:"column:owner_name;type:varchar(100);comment:归属客户经理"`
+	MainAccount       string     `json:"main_account" gorm:"column:main_account;type:varchar(200);comment:主账号"`
+	ProjectName       string     `json:"project_name" gorm:"column:project_name;type:varchar(200);comment:项目名称"`
+	OpenMethod        string     `json:"open_method" gorm:"column:open_method;type:varchar(32);default:trial;comment:开通方式"`
+	ContractNo        string     `json:"contract_no" gorm:"column:contract_no;type:varchar(100);comment:合同编号"`
+	OrderNo           string     `json:"order_no" gorm:"column:order_no;type:varchar(100);index;comment:订单编号"`
+	OpenPeriod        string     `json:"open_period" gorm:"column:open_period;type:varchar(100);comment:开通周期"`
+	ContractStartAt   *time.Time `json:"contract_start_at" gorm:"column:contract_start_at;comment:合同开始时间"`
+	ContractEndAt     *time.Time `json:"contract_end_at" gorm:"column:contract_end_at;comment:合同结束时间"`
+	UpdaterID         int        `json:"updater_id" gorm:"column:updater_id;comment:更新人ID"`
+	UpdaterName       string     `json:"updater_name" gorm:"column:updater_name;type:varchar(100);comment:更新人"`
 	OperatorID          int    `json:"operator_id" gorm:"column:operator_id;index;comment:操作人ID"`
 	OperatorName        string `json:"operator_name" gorm:"column:operator_name;type:varchar(100);comment:操作人"`
 	WorkorderInstanceID int    `json:"workorder_instance_id,omitempty" gorm:"-"`
@@ -118,6 +137,7 @@ type OpsContract struct {
 	TrialID        *int       `json:"trial_id" gorm:"column:trial_id;index;comment:关联试用"`
 	Type           string     `json:"type" gorm:"column:type;type:varchar(32);not null;index;comment:合同类型"`
 	Title          string     `json:"title" gorm:"column:title;type:varchar(200);not null;comment:合同标题"`
+	ContractNo     string     `json:"contract_no" gorm:"column:contract_no;type:varchar(100);index;comment:合同编号"`
 	ProductType    string     `json:"product_type" gorm:"column:product_type;type:varchar(64);index;comment:算力产品类型"`
 	BillingMode    string     `json:"billing_mode" gorm:"column:billing_mode;type:varchar(64);comment:计费模式"`
 	UnitPrice      float64    `json:"unit_price" gorm:"column:unit_price;type:decimal(14,2);comment:单价"`
@@ -140,6 +160,7 @@ type CreateOpsContractReq struct {
 	TrialID         *int       `json:"trial_id"`
 	Type            string     `json:"type" binding:"required,oneof=trial formal"`
 	Title           string     `json:"title" binding:"required,min=1,max=200"`
+	ContractNo      string     `json:"contract_no"`
 	ProductType     string     `json:"product_type"`
 	BillingMode     string     `json:"billing_mode"`
 	UnitPrice       float64    `json:"unit_price"`
@@ -157,6 +178,7 @@ type CreateOpsContractReq struct {
 type UpdateOpsContractReq struct {
 	ID              int        `json:"id" binding:"required,min=1"`
 	Title           string     `json:"title" binding:"required,min=1,max=200"`
+	ContractNo      string     `json:"contract_no"`
 	ProductType     string     `json:"product_type"`
 	BillingMode     string     `json:"billing_mode"`
 	UnitPrice       float64    `json:"unit_price"`
@@ -177,7 +199,7 @@ type ListOpsContractReq struct {
 	Status     string `json:"status" form:"status"`
 }
 
-// OpsActivation 开通单（申请字段 + 回馈账号字段）
+// OpsActivation 开通单（申请字段 + 回馈账号字段 + 开通台账）
 type OpsActivation struct {
 	Model
 	CustomerID      int        `json:"customer_id" gorm:"column:customer_id;not null;index;comment:客户ID"`
@@ -191,6 +213,21 @@ type OpsActivation struct {
 	FeedbackRemark  string     `json:"feedback_remark" gorm:"column:feedback_remark;type:text;comment:开通回馈说明"`
 	Status          string     `json:"status" gorm:"column:status;type:varchar(32);not null;default:draft;index;comment:状态"`
 	ActivatedAt     *time.Time `json:"activated_at" gorm:"column:activated_at;comment:开通时间"`
+	// 开通台账（归档列表）
+	CustomerShortName string     `json:"customer_short_name" gorm:"column:customer_short_name;type:varchar(100);comment:客户简称"`
+	ProductType       string     `json:"product_type" gorm:"column:product_type;type:varchar(64);index;comment:产品类型"`
+	Region            string     `json:"region" gorm:"column:region;type:varchar(64);comment:所属大区"`
+	OwnerName         string     `json:"owner_name" gorm:"column:owner_name;type:varchar(100);comment:归属客户经理"`
+	MainAccount       string     `json:"main_account" gorm:"column:main_account;type:varchar(200);comment:主账号"`
+	ProjectName       string     `json:"project_name" gorm:"column:project_name;type:varchar(200);comment:项目名称"`
+	OpenMethod        string     `json:"open_method" gorm:"column:open_method;type:varchar(32);default:formal;comment:开通方式"`
+	ContractNo        string     `json:"contract_no" gorm:"column:contract_no;type:varchar(100);comment:合同编号"`
+	OrderNo           string     `json:"order_no" gorm:"column:order_no;type:varchar(100);index;comment:订单编号"`
+	OpenPeriod        string     `json:"open_period" gorm:"column:open_period;type:varchar(100);comment:开通周期"`
+	ContractStartAt   *time.Time `json:"contract_start_at" gorm:"column:contract_start_at;comment:合同开始时间"`
+	ContractEndAt     *time.Time `json:"contract_end_at" gorm:"column:contract_end_at;comment:合同结束时间"`
+	UpdaterID         int        `json:"updater_id" gorm:"column:updater_id;comment:更新人ID"`
+	UpdaterName       string     `json:"updater_name" gorm:"column:updater_name;type:varchar(100);comment:更新人"`
 	OperatorID          int    `json:"operator_id" gorm:"column:operator_id;index;comment:操作人ID"`
 	OperatorName        string `json:"operator_name" gorm:"column:operator_name;type:varchar(100);comment:操作人"`
 	WorkorderInstanceID int    `json:"workorder_instance_id,omitempty" gorm:"-"`

@@ -25,14 +25,20 @@
 
 package model
 
+import "time"
+
 const (
-	OpsAttachmentBizContract   = "contract"
-	OpsAttachmentBizSettlement = "settlement"
-	OpsAttachmentBizExhibition = "exhibition"
-	OpsAttachmentBizPublicFault = "public_fault"
+	OpsAttachmentBizContract         = "contract"
+	OpsAttachmentBizSettlement       = "settlement"
+	OpsAttachmentBizExhibition       = "exhibition"
+	OpsAttachmentBizPublicFault      = "public_fault"
+	OpsAttachmentBizTrialSheet       = "trial_sheet"       // 测试开通单（xlsx）
+	OpsAttachmentBizTrialEmail       = "trial_email"       // 测试开通邮件佐证
+	OpsAttachmentBizActivationSheet  = "activation_sheet"  // 正式开通单（xlsx）
+	OpsAttachmentBizActivationEmail  = "activation_email"  // 正式开通邮件佐证
 )
 
-// OpsAttachment 运营业务附件（合同/结算等）
+// OpsAttachment 运营业务附件（合同/结算/开通单/邮件佐证等）
 type OpsAttachment struct {
 	Model
 	BizType     string `json:"biz_type" gorm:"column:biz_type;type:varchar(32);not null;index;comment:业务类型"`
@@ -48,6 +54,51 @@ type OpsAttachment struct {
 func (OpsAttachment) TableName() string { return "cl_ops_attachment" }
 
 type ListOpsAttachmentReq struct {
-	BizType string `json:"biz_type" form:"biz_type" binding:"required,oneof=contract settlement exhibition"`
+	BizType string `json:"biz_type" form:"biz_type" binding:"required,oneof=contract settlement exhibition trial_sheet trial_email activation_sheet activation_email"`
 	BizID   int    `json:"biz_id" form:"biz_id" binding:"required,min=1"`
+}
+
+// OpsCustomerEvidencePack 客户交付佐证包（测试/正式开通或合同）
+type OpsCustomerEvidencePack struct {
+	Scene               string           `json:"scene"` // trial | formal | contract
+	SceneLabel          string           `json:"scene_label"`
+	BizType             string           `json:"biz_type"` // trial | activation | contract
+	BizID               int              `json:"biz_id"`
+	CustomerID          int              `json:"customer_id"`
+	CustomerName        string           `json:"customer_name,omitempty"`
+	CustomerShortName   string           `json:"customer_short_name,omitempty"`
+	ProductType         string           `json:"product_type,omitempty"`
+	Region              string           `json:"region,omitempty"`
+	OwnerName           string           `json:"owner_name,omitempty"`
+	MainAccount         string           `json:"main_account,omitempty"`
+	ProjectName         string           `json:"project_name,omitempty"`
+	OpenMethod          string           `json:"open_method,omitempty"`
+	OpenMethodLabel     string           `json:"open_method_label,omitempty"`
+	ContractNo          string           `json:"contract_no,omitempty"`
+	OrderNo             string           `json:"order_no,omitempty"`
+	OpenPeriod          string           `json:"open_period,omitempty"`
+	ContractStartAt     *time.Time       `json:"contract_start_at,omitempty"`
+	ContractEndAt       *time.Time       `json:"contract_end_at,omitempty"`
+	Title               string           `json:"title"`
+	Status              string           `json:"status,omitempty"`
+	OperatorName        string           `json:"operator_name,omitempty"`
+	UpdaterName         string           `json:"updater_name,omitempty"`
+	CreatedAt           time.Time        `json:"created_at"`
+	UpdatedAt           time.Time        `json:"updated_at,omitempty"`
+	WorkorderInstanceID int              `json:"workorder_instance_id,omitempty"`
+	ContractID          int              `json:"contract_id,omitempty"`
+	SheetCount          int              `json:"sheet_count"`
+	EmailCount          int              `json:"email_count"`
+	ContractFileCount   int              `json:"contract_file_count"`
+	LedgerIncomplete    bool             `json:"ledger_incomplete,omitempty"` // 开通台账未写全，归档列多为空
+	Sheets              []*OpsAttachment `json:"sheets"`
+	Emails              []*OpsAttachment `json:"emails"`
+	Contracts           []*OpsAttachment `json:"contracts,omitempty"`
+}
+
+// ListOpsDeliveryPackReq 开通单统一归档列表
+type ListOpsDeliveryPackReq struct {
+	ListReq
+	Scene      string `json:"scene" form:"scene" binding:"omitempty,oneof=trial formal"`
+	CustomerID int    `json:"customer_id" form:"customer_id"`
 }

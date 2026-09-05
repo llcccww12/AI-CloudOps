@@ -33,6 +33,11 @@ func (d *opsTrialDAO) Update(ctx context.Context, t *model.OpsTrial) error {
 		"title": t.Title, "demand_type": t.DemandType, "resource_scale": t.ResourceScale,
 		"purpose": t.Purpose, "plan_start_at": t.PlanStartAt, "plan_end_at": t.PlanEndAt,
 		"evaluation": t.Evaluation, "convert_intent": t.ConvertIntent,
+		"customer_short_name": t.CustomerShortName, "product_type": t.ProductType, "region": t.Region,
+		"owner_name": t.OwnerName, "main_account": t.MainAccount, "project_name": t.ProjectName,
+		"open_method": t.OpenMethod, "contract_no": t.ContractNo, "order_no": t.OrderNo,
+		"open_period": t.OpenPeriod, "contract_start_at": t.ContractStartAt, "contract_end_at": t.ContractEndAt,
+		"updater_id": t.UpdaterID, "updater_name": t.UpdaterName,
 	}).Error
 }
 func (d *opsTrialDAO) Delete(ctx context.Context, id int) error {
@@ -96,7 +101,7 @@ func (d *opsContractDAO) Create(ctx context.Context, c *model.OpsContract) error
 }
 func (d *opsContractDAO) Update(ctx context.Context, c *model.OpsContract) error {
 	return d.db.WithContext(ctx).Model(&model.OpsContract{}).Where("id = ?", c.ID).Updates(map[string]interface{}{
-		"title": c.Title, "product_type": c.ProductType, "billing_mode": c.BillingMode, "unit_price": c.UnitPrice,
+		"title": c.Title, "contract_no": c.ContractNo, "product_type": c.ProductType, "billing_mode": c.BillingMode, "unit_price": c.UnitPrice,
 		"billing_cycle": c.BillingCycle, "payment_method": c.PaymentMethod, "payment_term_days": c.PaymentTermDays,
 		"start_at": c.StartAt, "end_at": c.EndAt, "auto_renew": c.AutoRenew,
 		"status": c.Status, "remark": c.Remark,
@@ -169,6 +174,11 @@ func (d *opsActivationDAO) Update(ctx context.Context, a *model.OpsActivation) e
 		"feedback_account": a.FeedbackAccount, "feedback_tenant": a.FeedbackTenant,
 		"feedback_endpoint": a.FeedbackEndpoint, "feedback_remark": a.FeedbackRemark,
 		"activated_at": a.ActivatedAt, "status": a.Status,
+		"customer_short_name": a.CustomerShortName, "product_type": a.ProductType, "region": a.Region,
+		"owner_name": a.OwnerName, "main_account": a.MainAccount, "project_name": a.ProjectName,
+		"open_method": a.OpenMethod, "contract_no": a.ContractNo, "order_no": a.OrderNo,
+		"open_period": a.OpenPeriod, "contract_start_at": a.ContractStartAt, "contract_end_at": a.ContractEndAt,
+		"updater_id": a.UpdaterID, "updater_name": a.UpdaterName,
 	}).Error
 }
 func (d *opsActivationDAO) Delete(ctx context.Context, id int) error {

@@ -15,6 +15,7 @@ const (
 	OpsLifecycleStepOpenFeedback  = "open_feedback"
 	OpsLifecycleStepTrialAccept   = "trial_accept"
 	OpsLifecycleStepContract      = "contract"
+	OpsLifecycleStepProvision     = "provision" // 测试/资源开通节点：填写开通台账
 	OpsLifecycleStepSettlement    = "settlement"
 	OpsLifecycleStepInvoice       = "invoice"
 	OpsLifecycleStepPayment       = "payment"
